@@ -1,0 +1,2654 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TT Audit — Inventario</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Lector/escritor de Excel (.xlsx). Sin internet se usa CSV automáticamente. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  /* ========== COLORES (cámbialos aquí) ========== */
+  :root{
+    --bg:#f4f6f9; --panel:#ffffff; --side:#14213d; --side-text:#c9d1e3; --side-active:#22335c;
+    --text:#1d2433; --muted:#6b7385; --line:#e3e7ee; --accent:#2563eb; --accent-soft:#e8efff;
+    --ok:#15803d; --ok-bg:#dcfce7; --warn:#b45309; --warn-bg:#fef3c7;
+    --bad:#b91c1c; --bad-bg:#fee2e2; --gray:#475569; --gray-bg:#e2e8f0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;display:flex;min-height:100vh}
+  button{font:inherit;cursor:pointer}
+  input,select,textarea{font:inherit;color:inherit}
+
+  /* ---------- Menú lateral ---------- */
+  .side{width:240px;background:var(--side);color:var(--side-text);flex-shrink:0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+  .brand{display:flex;align-items:center;gap:10px;padding:20px 18px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .logo{width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px}
+  .brand b{color:#fff;display:block;font-size:15px}
+  .brand small{font-size:12px;opacity:.7}
+  .nav{padding:12px 10px;flex:1;overflow:auto}
+  .nav-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;opacity:.55;padding:14px 10px 6px}
+  .nav button{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;color:inherit;padding:9px 10px;border-radius:8px;text-align:left}
+  .nav button:hover{background:rgba(255,255,255,.06)}
+  .nav button.active{background:var(--side-active);color:#fff;font-weight:600}
+  .nav .count{margin-left:auto;font-size:11px;background:rgba(255,255,255,.12);padding:1px 7px;border-radius:10px}
+  .nav .count.alert{background:#dc2626;color:#fff}
+
+  /* ---------- Contenido ---------- */
+  .main{flex:1;padding:28px 32px;min-width:0}
+  .head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+  h1{font-size:24px}
+  .sub{color:var(--muted);margin-top:4px}
+  .actions{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{border:1px solid var(--line);background:var(--panel);padding:8px 14px;border-radius:8px;font-weight:500;color:inherit}
+  .btn:hover{border-color:#c5ccd8}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{filter:brightness(1.07)}
+  .btn.danger{color:var(--bad)}
+  .btn.sm{padding:4px 10px;font-size:13px}
+  .btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .chip{border:1px solid var(--line);background:var(--panel);border-radius:20px;padding:6px 14px;font-weight:500}
+  .chip.on{background:var(--side);border-color:var(--side);color:#fff}
+  .chip small{opacity:.7;margin-left:4px}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .kpi span{color:var(--muted);font-size:12.5px}
+  .kpi b{display:block;font-size:26px;margin:6px 0 2px}
+  .kpi small{color:var(--muted);font-size:12px}
+  .kpi.red b{color:var(--bad)} .kpi.amber b{color:var(--warn)} .kpi.green b{color:var(--ok)}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
+  .card h2{font-size:15px;margin-bottom:4px}
+  .card .hint{color:var(--muted);font-size:13px;margin-bottom:14px}
+  .card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .filters input,.filters select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel)}
+  .filters input{min-width:240px}
+
+  .table-wrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;padding:10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td.empty{text-align:center;color:var(--muted);padding:28px;white-space:normal}
+  td.num,th.num{text-align:right}
+  td.wrap{white-space:normal;min-width:180px;max-width:320px;color:var(--muted);font-size:13px}
+  .trunc{display:inline-block;max-width:230px;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+  .muted{color:var(--muted)}
+
+  .tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap}
+  .t-ok{background:var(--ok-bg);color:var(--ok)}
+  .t-blue{background:var(--accent-soft);color:var(--accent)}
+  .t-warn{background:var(--warn-bg);color:var(--warn)}
+  .t-bad{background:var(--bad-bg);color:var(--bad)}
+  .t-gray{background:var(--gray-bg);color:var(--gray)}
+
+  .bar{height:8px;background:var(--gray-bg);border-radius:6px;overflow:hidden;min-width:90px;flex:1}
+  .bar i{display:block;height:100%}
+  .cond-row{display:flex;align-items:center;gap:10px;margin:8px 0}
+  .cond-row span:first-child{width:96px;font-size:13px}
+  .cond-row b{width:30px;text-align:right}
+
+  .alerts li{list-style:none;padding:9px 0;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:flex-start}
+  .alerts li:last-child{border-bottom:0}
+
+  /* ---------- Economato ---------- */
+  .items{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-bottom:20px}
+  .item{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:6px}
+  .item.agotado{border-color:#fca5a5}
+  .item.bajo{border-color:#fcd34d}
+  .item-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .item h3{font-size:15px}
+  .stock{font-size:34px;font-weight:700;line-height:1.1}
+  .stock small{font-size:13px;font-weight:500;color:var(--muted)}
+  .item dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:12.5px;color:var(--muted)}
+  .item dd{color:var(--text);text-align:right}
+  .item .row-btns{display:flex;gap:6px;margin-top:6px}
+  .item .row-btns .btn{flex:1}
+  .link{background:none;border:0;color:var(--muted);font-size:12px;text-decoration:underline}
+
+  /* ---------- Solicitudes / tickets ---------- */
+  .tk-id{font-family:ui-monospace,Menlo,monospace;font-weight:700}
+  .tk-lines{grid-column:1/-1;display:flex;flex-direction:column;gap:8px}
+  .tk-line{display:grid;grid-template-columns:1fr 90px 32px;gap:8px;align-items:center}
+  .tk-line .otro{grid-column:1/-1;display:none}
+  .tk-line.es-otro .otro{display:block}
+  .tk-line button{border:1px solid var(--line);background:var(--panel);border-radius:8px;height:36px}
+  .tk-info{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 18px;margin:14px 0}
+  .tk-info span{display:block;font-size:12px;color:var(--muted)}
+  .tk-info b{font-weight:500}
+  .tk-box{background:var(--bg);border-radius:10px;padding:12px 14px;margin:12px 0;font-size:13.5px}
+  .timeline{list-style:none;border-left:2px solid var(--line);margin:8px 0 0 6px;padding-left:16px}
+  .timeline li{position:relative;padding:4px 0 12px;font-size:13px}
+  .timeline li::before{content:'';position:absolute;left:-22px;top:8px;width:10px;height:10px;border-radius:50%;background:var(--accent)}
+  .timeline small{color:var(--muted)}
+  .tk-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:12px}
+  .check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);font-weight:500;margin:0}
+  #overlay{z-index:55}
+
+  /* ---------- Ingreso y usuario ---------- */
+  .login{position:fixed;inset:0;background:var(--side);display:none;align-items:center;justify-content:center;padding:16px;z-index:100}
+  .login.open{display:flex}
+  .login-card{background:var(--panel);border-radius:16px;padding:34px 30px;width:100%;max-width:400px}
+  .login-card .logo{width:56px;height:56px;font-size:17px;margin:0 auto 16px;border-radius:14px}
+  .login-card h2{font-size:20px;text-align:center}
+  .login-card .sub{margin:6px 0 22px;text-align:center}
+  .login-card form{display:flex;flex-direction:column;gap:12px}
+  .login-card input,.login-card select{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--panel)}
+  .login-card .btn{width:100%;padding:11px;margin-top:4px}
+  .user{border-top:1px solid rgba(255,255,255,.08);padding:14px 16px;display:flex;align-items:center;gap:10px}
+  .avatar{width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:600;font-size:13px;flex-shrink:0}
+  .user-txt{min-width:0;flex:1}
+  .user-txt b{color:#fff;display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .user-txt small{font-size:11.5px;opacity:.7;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .user .link{color:var(--side-text);padding:0}
+
+  /* ---------- Cochera ---------- */
+  .dia-nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+  .dia-nav input{border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:var(--panel)}
+  .dia-nav b{font-size:15px;text-transform:capitalize;margin-left:6px}
+  .espacios{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-bottom:20px}
+  .esp{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .esp.inactivo{opacity:.55}
+  .esp-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px}
+  .esp-top h3{font-size:20px;letter-spacing:.02em}
+  .esp-top small{display:block;color:var(--muted);font-size:12.5px}
+  .esp-turno{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+  .esp-turno .t{width:64px;color:var(--muted);font-size:12px}
+  .esp-turno .q{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .esp-turno.ahora .t{color:var(--accent);font-weight:700}
+  .semana td,.semana th{text-align:center}
+  .semana td:first-child,.semana th:first-child{text-align:left}
+  .semana th button{background:none;border:0;font:inherit;color:inherit;text-transform:capitalize;cursor:pointer}
+  .semana th.sel{background:var(--accent-soft);border-radius:8px}
+  .chips-c{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0}
+  .chip-c{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:14px;font-size:12.5px;font-weight:500;border:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip-c.tit{background:var(--gray-bg);color:var(--gray)}
+  .chip-c.res{background:var(--accent-soft);color:var(--accent)}
+  .chip-c.lib{background:var(--ok-bg);color:var(--ok)}
+  button.chip-c.lib{cursor:pointer;font-weight:600} button.chip-c.lib:hover{filter:brightness(.95)}
+  .chip-c .x{background:none;border:0;color:inherit;cursor:pointer;padding:0 0 0 2px;font-size:11px}
+  .esp-tit{border-top:1px solid var(--line);padding-top:9px;margin-top:2px;font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .esp-tit b{color:var(--text);font-weight:600}
+  .dot{display:inline-block;min-width:22px;padding:0 3px;height:18px;border-radius:5px;font-size:10.5px;line-height:18px;font-weight:700;margin:0 1px}
+  .dot.l{background:var(--ok-bg);color:var(--ok)} .dot.r{background:var(--accent-soft);color:var(--accent)} .dot.f{background:var(--gray-bg);color:var(--gray)}
+
+  /* ---------- Estado de conexión ---------- */
+  .sync{padding:8px 16px;font-size:11.5px;color:var(--side-text);border-top:1px solid rgba(255,255,255,.08);display:flex;gap:6px;align-items:center}
+  .sync:empty{display:none}
+  .sync i{width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0}
+  .sync.pend i{background:#f59e0b} .sync.err i{background:#ef4444} .sync.local i{background:#94a3b8}
+  .sync button{margin-left:auto;background:none;border:0;color:inherit;text-decoration:underline;font-size:11.5px;padding:0}
+
+  /* ---------- Roles ---------- */
+  body.rol-usuario .solo-admin{display:none !important}
+  .rol-tag{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:10px;background:rgba(255,255,255,.14);color:#fff;margin-top:3px}
+  .tabs-login{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--bg);border-radius:10px;padding:4px;margin-bottom:18px}
+  .tabs-login button{border:0;background:none;border-radius:8px;padding:9px;font-weight:600;color:var(--muted)}
+  .tabs-login button.on{background:var(--panel);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .solo-tab-admin{display:none !important}
+  .login-admin .solo-tab-admin{display:block !important}
+  .login-admin .solo-tab-usuario{display:none !important}
+  .code{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:12px;font:12px/1.5 ui-monospace,Menlo,monospace;overflow:auto;white-space:pre-wrap;word-break:break-all}
+
+  .view{display:none}
+  .view.active{display:block}
+
+  /* ---------- Modal ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
+  .overlay.open{display:flex}
+  .modal{background:var(--panel);border-radius:14px;width:100%;max-width:660px;max-height:92vh;overflow:auto;padding:24px}
+  .modal h3{font-size:18px}
+  .modal p.sub{margin-bottom:16px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid .full{grid-column:1/-1}
+  .grid .sep{grid-column:1/-1;border-top:1px dashed var(--line);margin-top:4px;padding-top:8px;font-size:12px;color:var(--muted)}
+  label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:4px}
+  .grid input,.grid select,.grid textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel)}
+  .grid textarea{min-height:60px;resize:vertical}
+  .modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+  .err{color:var(--bad);font-size:13px;margin-top:10px;min-height:18px}
+
+  .toast{position:fixed;bottom:20px;right:20px;background:var(--side);color:#fff;padding:10px 16px;border-radius:8px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none;z-index:60}
+  .toast.show{opacity:1;transform:none}
+
+  @media (max-width:900px){
+    body{flex-direction:column}
+    .side{width:100%;height:auto;position:static}
+    .nav{display:flex;overflow-x:auto;gap:4px}
+    .nav-title{display:none}
+    .nav button{white-space:nowrap;width:auto}
+    .main{padding:20px 16px}
+    .grid,.cols{grid-template-columns:1fr}
+    .filters input{min-width:0;flex:1}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== MENÚ LATERAL ===================== -->
+<aside class="side">
+  <div class="brand">
+    <div class="logo">TTA</div>
+    <div><b>TT Audit</b><small>Inventario y economato</small></div>
+  </div>
+  <nav class="nav" id="nav">
+    <div class="nav-title">General</div>
+    <button data-view="panel" class="active">📊 Panel general</button>
+    <button data-view="solicitudes">🎫 Solicitudes <span class="count" id="c-tk">0</span></button>
+    <button data-view="cochera">🚗 Cochera <span class="count" id="c-coch" title="Libres ahora">0</span></button>
+    <div class="nav-title solo-admin">Activos</div>
+    <button class="solo-admin" data-view="equipos">💻 Laptops y equipos <span class="count" id="c-equipos">0</span></button>
+    <button class="solo-admin" data-view="sillas">🪑 Sillas <span class="count" id="c-sillas">0</span></button>
+    <button class="solo-admin" data-view="estado">🩺 Estado de equipos <span class="count" id="c-estado">0</span></button>
+    <div class="nav-title solo-admin">Suministros</div>
+    <button class="solo-admin" data-view="economato" data-alm="Oficina">🏢 Inventario oficina <span class="count" id="c-eco-Oficina">0</span></button>
+    <button class="solo-admin" data-view="economato" data-alm="CC ADM">☕ CC ADM <span class="count" id="c-eco-CC ADM">0</span></button>
+    <div class="nav-title solo-admin">Registro</div>
+    <button class="solo-admin" data-view="historial">🕑 Historial</button>
+  </nav>
+  <div class="sync" id="sync-box"></div>
+  <div class="user" id="user-box"></div>
+</aside>
+
+<!-- ===================== LOGIN ===================== -->
+<div class="login open" id="login">
+  <div class="login-card">
+    <div class="logo">TTA</div>
+    <h2>Acceso a la plataforma</h2>
+    <p class="sub" id="lg-sub">Ingresa con tu nombre y tu correo <b>@ttaudit.com</b></p>
+    <div class="tabs-login" role="tablist">
+      <button type="button" role="tab" data-rol="usuario" class="on" onclick="tabLogin('usuario')">👤 Usuario</button>
+      <button type="button" role="tab" data-rol="admin" onclick="tabLogin('admin')">🔐 Administrador</button>
+    </div>
+    <form id="login-form" autocomplete="on">
+      <div><label for="lg-nombre">Nombre completo</label><input id="lg-nombre" name="name" autocomplete="name" placeholder="Ej. Claudia Camarena" required></div>
+      <div class="solo-tab-usuario"><label for="lg-email">Correo corporativo</label><input id="lg-email" name="email" type="email" autocomplete="email" placeholder="nombre@ttaudit.com"></div>
+      <div class="solo-tab-admin"><label for="lg-admin-email">Correo</label><input id="lg-admin-email" readonly style="background:var(--bg)"></div>
+      <div class="solo-tab-admin"><label for="lg-clave">Clave de administrador</label><input id="lg-clave" type="password" autocomplete="current-password"></div>
+      <div><label for="lg-app">¿Con qué envías correos?</label>
+        <select id="lg-app"><option value="gmail">Gmail (en el navegador)</option><option value="mailto">Outlook u otra app de correo</option></select></div>
+      <p class="err" id="login-err" style="margin:0"></p>
+      <button class="btn primary" type="submit" id="lg-submit">Ingresar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== CONTENIDO ===================== -->
+<main class="main">
+
+  <!-- ---------- PANEL GENERAL ---------- -->
+  <section class="view active" id="view-panel">
+    <div class="head">
+      <div><h1>Panel general</h1><p class="sub">Resumen de equipos, sillas y economato</p></div>
+      <div class="actions solo-admin">
+        <button class="btn" id="btn-deshacer" style="display:none" onclick="deshacerCarga()">↶ Deshacer última carga</button>
+        <label class="btn" style="margin:0;font-weight:500;color:inherit" title="Reemplaza todas las secciones con las hojas del archivo">⬆ Cargar copia completa<input type="file" accept=".xlsx,.xls" hidden onchange="cargarPanel(this,'todo')"></label>
+        <button class="btn primary" onclick="descargarPanel('todo')" title="Un Excel con una hoja por sección">⬇ Descargar copia completa</button>
+      </div>
+    </div>
+    <div class="kpis" id="kpis-panel"></div>
+    <div class="cols">
+      <div class="card">
+        <h2>Activos por cuenta</h2>
+        <p class="hint">Cuántos equipos y sillas tiene cada cuenta.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Cuenta</th><th class="num">Laptops</th><th class="num">PC / Monitores</th><th class="num">Sillas</th><th class="num">Total</th></tr></thead>
+          <tbody id="tb-panel"></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h2>Pendientes</h2>
+        <p class="hint">Lo que conviene revisar hoy.</p>
+        <ul class="alerts" id="panel-alertas"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- LAPTOPS Y EQUIPOS ---------- -->
+  <section class="view" id="view-equipos">
+    <div class="head">
+      <div><h1>💻 Laptops y equipos</h1><p class="sub">Base de activos de cómputo: asignación, especificaciones, estado y condición</p></div>
+      <div class="actions">
+        <label class="btn" style="margin:0;font-weight:500;color:inherit">⬆ Cargar Excel<input type="file" accept=".xlsx,.xls,.csv" hidden onchange="cargarPanel(this,'equipos')"></label>
+        <button class="btn" onclick="descargarPanel('equipos')">⬇ Descargar Excel</button>
+        <button class="btn primary" onclick="formActivo('equipos')">+ Crear activo</button>
+      </div>
+    </div>
+    <div class="chips" id="chips-equipos"></div>
+    <div class="kpis" id="kpis-equipos"></div>
+    <div class="card">
+      <h2 id="titulo-cuenta-eq">Total por cuenta</h2>
+      <p class="hint">Asignados, disponibles y fuera de uso en cada cuenta.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Cuenta</th><th class="num">Total</th><th class="num">Asignados</th><th class="num">Disponibles</th><th class="num">Mant. / Inactivos</th></tr></thead>
+        <tbody id="tb-equipos-cuenta"></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h2>Detalle</h2>
+      <p class="hint">Busca por nombre, persona, ID de dispositivo, procesador u observación.</p>
+      <div class="filters">
+        <input type="search" placeholder="Buscar…" data-f="equipos" data-k="q">
+        <select data-f="equipos" data-k="estado"></select>
+        <select data-f="equipos" data-k="condicion"></select>
+        <select data-f="equipos" data-k="cuenta"></select>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Nombre</th><th>Cuenta</th><th>Procesador</th><th>RAM</th><th>ID dispositivo</th><th>Estado</th><th>Condición</th><th>Asignado a</th><th>Compra</th><th>Últ. mant.</th><th>Mouse</th><th>Observaciones</th><th></th></tr></thead>
+        <tbody id="tb-equipos"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ---------- SILLAS ---------- -->
+  <section class="view" id="view-sillas">
+    <div class="head">
+      <div><h1>🪑 Sillas</h1><p class="sub">Base propia de sillas. Regístralas por código, por nombre de la persona, o ambos.</p></div>
+      <div class="actions">
+        <label class="btn" style="margin:0;font-weight:500;color:inherit">⬆ Cargar Excel<input type="file" accept=".xlsx,.xls,.csv" hidden onchange="cargarPanel(this,'sillas')"></label>
+        <button class="btn" onclick="descargarPanel('sillas')">⬇ Descargar Excel</button>
+        <button class="btn primary" onclick="formActivo('sillas')">+ Registrar silla</button>
+      </div>
+    </div>
+    <div class="kpis" id="kpis-sillas"></div>
+    <div class="card">
+      <h2>Base de sillas</h2>
+      <p class="hint">Escribe un código o un nombre para encontrar la silla.</p>
+      <div class="chips" id="chips-sillas" style="margin-bottom:12px"></div>
+      <div class="filters">
+        <input type="search" placeholder="Buscar por código o nombre…" data-f="sillas" data-k="q">
+        <select data-f="sillas" data-k="estado"></select>
+        <select data-f="sillas" data-k="condicion"></select>
+        <select data-f="sillas" data-k="cuenta"></select>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Código</th><th>Descripción</th><th>Tipo</th><th>Cuenta</th><th>Asignado a</th><th>Ubicación</th><th>Estado</th><th>Condición</th><th>Compra</th><th>Observaciones</th><th></th></tr></thead>
+        <tbody id="tb-sillas"></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div><h2>Colaboradores sin silla</h2>
+        <p class="hint" style="margin:0">Personas que tienen un equipo asignado pero ninguna silla registrada a su nombre.</p></div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Colaborador</th><th>Cuenta</th><th>Equipos asignados</th><th></th></tr></thead>
+        <tbody id="tb-sin-silla"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ---------- ESTADO DE EQUIPOS ---------- -->
+  <section class="view" id="view-estado">
+    <div class="head">
+      <div><h1>🩺 Estado de equipos</h1><p class="sub">Condición física de laptops, sillas y otros equipos, y qué necesita atención</p></div>
+    </div>
+    <div class="chips" id="chips-estado"></div>
+    <div class="cols">
+      <div class="card">
+        <h2>Condición física</h2>
+        <p class="hint">Bueno · Regular (funciona con fallas) · Malo · No funciona</p>
+        <div id="estado-cond"></div>
+      </div>
+      <div class="card">
+        <h2>Estado vs. condición</h2>
+        <p class="hint">Cruce entre uso actual y condición física.</p>
+        <div class="table-wrap"><table id="estado-matriz"></table></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Requieren atención</h2>
+      <p class="hint">Condición Regular, Malo o No funciona, o en mantenimiento.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Activo</th><th>Asignado a</th><th>Cuenta</th><th>Estado</th><th>Condición</th><th>Detalle</th><th></th></tr></thead>
+        <tbody id="tb-atencion"></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h2>Datos a revisar</h2>
+      <p class="hint">Inconsistencias encontradas en la base (IDs repetidos, estados que no cuadran, nombres parecidos).</p>
+      <ul class="alerts" id="lista-revisar"></ul>
+    </div>
+  </section>
+
+  <!-- ---------- ECONOMATO ---------- -->
+  <section class="view" id="view-economato">
+    <div class="head">
+      <div><h1 id="eco-title">🏢 Inventario oficina</h1><p class="sub" id="eco-sub"></p></div>
+      <div class="actions">
+        <label class="btn" style="margin:0;font-weight:500;color:inherit">⬆ Cargar Excel<input type="file" accept=".xlsx,.xls,.csv" hidden onchange="cargarPanel(this,'economato')"></label>
+        <button class="btn" onclick="descargarPanel('economato')">⬇ Descargar Excel</button>
+        <button class="btn" onclick="formItem()">+ Nuevo artículo</button>
+        <button class="btn primary" onclick="formMov()">+ Registrar movimiento</button>
+      </div>
+    </div>
+    <div class="kpis" id="kpis-eco"></div>
+    <div class="chips" id="chips-eco"></div>
+    <div class="items" id="eco-items"></div>
+    <div class="card">
+      <h2>Agotamientos y reposiciones</h2>
+      <p class="hint">Cada vez que un artículo llegó a 0 y cuándo se volvió a comprar.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Artículo</th><th>Se agotó el</th><th>Se volvió a comprar el</th><th class="num">Días sin stock</th><th class="num">Cantidad repuesta</th></tr></thead>
+        <tbody id="tb-ciclos"></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h2>Movimientos</h2>
+      <p class="hint">Compras, salidas y conteos físicos, del más reciente al más antiguo.</p>
+      <div class="filters">
+        <select id="f-mov-item"></select>
+        <select id="f-mov-tipo"><option value="">Todos los movimientos</option><option>Compra</option><option>Salida</option><option>Ajuste</option></select>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Fecha</th><th>Artículo</th><th>Movimiento</th><th class="num">Cantidad</th><th class="num">Stock después</th><th class="num">Costo (S/)</th><th>Registrado por</th><th>Observación</th><th></th></tr></thead>
+        <tbody id="tb-movs"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ---------- SOLICITUDES ---------- -->
+  <section class="view" id="view-solicitudes">
+    <div class="head">
+      <div><h1 id="tk-titulo">🎫 Solicitudes de abastecimiento</h1><p class="sub" id="tk-sub">Cada pedido genera un ticket: se evalúa contra el stock, se aprueba y se atiende</p></div>
+      <div class="actions">
+        <label class="btn solo-admin" style="margin:0;font-weight:500;color:inherit">⬆ Cargar Excel<input type="file" accept=".xlsx,.xls,.csv" hidden onchange="cargarPanel(this,'solicitudes')"></label>
+        <button class="btn solo-admin" onclick="descargarPanel('solicitudes')">⬇ Descargar Excel</button>
+        <button class="btn primary" onclick="formTicket()">+ Nueva solicitud</button>
+      </div>
+    </div>
+    <div class="kpis" id="kpis-tk"></div>
+    <div class="card">
+      <h2>Tickets</h2>
+      <p class="hint">Haz clic en “Ver” para evaluar, aprobar, rechazar o atender.</p>
+      <div class="chips" id="chips-tk" style="margin-bottom:12px"></div>
+      <div class="filters">
+        <input type="search" placeholder="Buscar por ticket, solicitante, artículo…" id="f-tk-q">
+        <select id="f-tk-alm"><option value="">Oficina y CC ADM</option><option value="Oficina">Inventario oficina</option><option value="CC ADM">CC ADM</option></select>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Ticket</th><th>Fecha</th><th>Solicitante</th><th>Área</th><th>Almacén</th><th>Pedido</th><th>Prioridad</th><th>Stock</th><th>Estado</th><th>Correo finanzas</th><th></th></tr></thead>
+        <tbody id="tb-tk"></tbody>
+      </table></div>
+    </div>
+    <div class="card solo-admin">
+      <h2>Evaluación de abastecimiento</h2>
+      <p class="hint">Lo pedido en tickets abiertos frente al stock actual, más lo que ya está bajo el mínimo. La columna “Sugerido comprar” cubre lo pedido y deja el mínimo.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Artículo</th><th>Almacén</th><th class="num">Pedido (abiertos)</th><th class="num">Stock</th><th class="num">Mínimo</th><th class="num">Faltante</th><th class="num">Sugerido comprar</th><th></th></tr></thead>
+        <tbody id="tb-eval"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ---------- COCHERA ---------- -->
+  <section class="view" id="view-cochera">
+    <div class="head">
+      <div><h1>🚗 Cochera</h1><p class="sub">Cada cochera la usan sus titulares. Cuando un titular no viene, su cupo queda libre y se puede reservar por mañana, tarde o día completo.</p></div>
+      <div class="actions">
+        <label class="btn solo-admin" style="margin:0;font-weight:500;color:inherit">⬆ Cargar Excel<input type="file" accept=".xlsx,.xls,.csv" hidden onchange="cargarPanel(this,'cochera')"></label>
+        <button class="btn solo-admin" onclick="descargarPanel('cochera')">⬇ Descargar Excel</button>
+        <button class="btn solo-admin" onclick="formEspacio()">+ Agregar cochera</button>
+        <button class="btn" id="btn-liberar-top" onclick="formLiberacion()">No vendré · liberar</button>
+        <button class="btn primary" onclick="formReserva()">+ Reservar</button>
+      </div>
+    </div>
+    <div class="dia-nav">
+      <button class="btn sm" onclick="moverDia(-1)" aria-label="Día anterior">◀</button>
+      <input type="date" id="f-coch-fecha" aria-label="Fecha">
+      <button class="btn sm" onclick="moverDia(1)" aria-label="Día siguiente">▶</button>
+      <button class="btn sm" onclick="ui.cochFecha=hoyISO();render()">Hoy</button>
+      <b id="coch-dia-txt"></b>
+    </div>
+    <div class="kpis" id="kpis-coch"></div>
+    <div class="espacios" id="coch-espacios"></div>
+    <div class="card">
+      <h2>Próximos 7 días</h2>
+      <p class="hint"><span class="dot l">M</span> cupo libre (en cocheras dobles, el número indica cuántos) · <span class="dot r">M</span> reservado · <span class="dot f">M</span> lo usan sus titulares — M = mañana, T = tarde. Haz clic en un día para verlo arriba.</p>
+      <div class="table-wrap"><table class="semana" id="coch-semana"></table></div>
+    </div>
+    <div class="card">
+      <h2>Ausencias de titulares</h2>
+      <p class="hint">Días en que un titular no viene y su cupo queda libre para reservar.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Cochera</th><th>Titular</th><th>Desde</th><th>Hasta</th><th>Motivo</th><th></th></tr></thead>
+        <tbody id="tb-ausencias"></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h2 id="coch-res-titulo">Próximas reservas</h2>
+      <p class="hint" id="coch-res-hint"></p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Fecha</th><th>Turno</th><th>Cochera</th><th>Persona</th><th>Placa</th><th>Estado</th><th></th></tr></thead>
+        <tbody id="tb-reservas"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ---------- HISTORIAL ---------- -->
+  <section class="view" id="view-historial">
+    <div class="head">
+      <div><h1>🕑 Historial de movimientos</h1><p class="sub">Altas, cambios de estado, reasignaciones y bajas de equipos y sillas</p></div>
+      <div class="actions">
+        <label class="btn" style="margin:0;font-weight:500;color:inherit">⬆ Cargar Excel<input type="file" accept=".xlsx,.xls,.csv" hidden onchange="cargarPanel(this,'historial')"></label>
+        <button class="btn" onclick="descargarPanel('historial')">⬇ Descargar Excel</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="filters">
+        <input type="search" placeholder="Buscar en el historial…" id="f-hist">
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Fecha</th><th>Base</th><th>Activo</th><th>Acción</th><th>Estado</th><th>Condición</th><th>Asignado a</th><th>Registrado por</th><th>Comentario</th></tr></thead>
+        <tbody id="tb-historial"></tbody>
+      </table></div>
+    </div>
+  </section>
+</main>
+
+<!-- ===================== MODAL GENÉRICO ===================== -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3 id="m-title"></h3>
+    <p class="sub" id="m-sub"></p>
+    <form id="m-form" class="grid" autocomplete="off"></form>
+    <div class="err" id="m-err"></div>
+    <div class="modal-foot">
+      <button class="btn" type="button" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn primary" type="submit" form="m-form">Guardar</button>
+    </div>
+  </div>
+</div>
+<div class="overlay" id="overlay-tk">
+  <div class="modal" style="max-width:760px" id="tk-detalle"></div>
+</div>
+<datalist id="dl-cuentas"></datalist>
+<datalist id="dl-personas"></datalist>
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================
+   SERVIDOR — pega aquí la URL /exec de tu Apps Script
+   (README.md, paso 3). Vacío = la página funciona sola y
+   guarda los datos solo en este navegador.
+   ========================================================= */
+const API_URL = '';
+const REMOTO = !!API_URL;
+
+/* =========================================================
+   CONFIGURACIÓN
+   ========================================================= */
+const ESTADOS     = ['Disponible','Asignado','Mantenimiento','Inactivo'];
+const CONDICIONES = ['Bueno','Regular','Malo','No funciona'];
+const CATS_EQ     = ['Laptop','PC','Monitor','Otro'];
+const TIPOS_SILLA = ['Ergonómica','Operativa','Gerencial','Visita','Otra'];
+const KEY = 'tta_inventario_v2';
+
+/* Artículos con los que arranca el economato (edítalos aquí o desde la página) */
+const ALMACENES = {
+  'Oficina': {titulo:'🏢 Inventario oficina', sub:'Pilas, útiles y suministros de oficina: conteo por tipo, cuándo se agotaron y cuándo se volvieron a comprar'},
+  'CC ADM':  {titulo:'☕ CC ADM — Caja chica administrativa', sub:'Café, azúcar, vasos descartables y demás insumos que se compran con caja chica'},
+};
+const ECONOMATO_INICIAL = [
+  {almacen:'Oficina', nombre:'Pilas AA',             categoria:'Pilas', tipo:'AA',     unidad:'unid.', minimo:8},
+  {almacen:'Oficina', nombre:'Pilas AAA',            categoria:'Pilas', tipo:'AAA',    unidad:'unid.', minimo:8},
+  {almacen:'Oficina', nombre:'Pila 9V',              categoria:'Pilas', tipo:'9V',     unidad:'unid.', minimo:2},
+  {almacen:'Oficina', nombre:'Pilas C',              categoria:'Pilas', tipo:'C',      unidad:'unid.', minimo:2},
+  {almacen:'Oficina', nombre:'Pilas D',              categoria:'Pilas', tipo:'D',      unidad:'unid.', minimo:2},
+  {almacen:'Oficina', nombre:'Pila de botón CR2032', categoria:'Pilas', tipo:'CR2032', unidad:'unid.', minimo:4},
+];
+const CC_ADM_INICIAL = [
+  {almacen:'CC ADM', nombre:'Café',                 categoria:'Cafetería',  tipo:'Instantáneo / molido', unidad:'frasco',  minimo:2},
+  {almacen:'CC ADM', nombre:'Azúcar',               categoria:'Cafetería',  tipo:'Rubia / blanca',       unidad:'kg',      minimo:2},
+  {almacen:'CC ADM', nombre:'Endulzante',           categoria:'Cafetería',  tipo:'Sobres',               unidad:'caja',    minimo:1},
+  {almacen:'CC ADM', nombre:'Infusiones / té',      categoria:'Cafetería',  tipo:'Sobres',               unidad:'caja',    minimo:2},
+  {almacen:'CC ADM', nombre:'Leche / cremora',      categoria:'Cafetería',  tipo:'',                     unidad:'unid.',   minimo:1},
+  {almacen:'CC ADM', nombre:'Agua de mesa',         categoria:'Cafetería',  tipo:'Bidón 20 L',           unidad:'bidón',   minimo:1},
+  {almacen:'CC ADM', nombre:'Vasos descartables',   categoria:'Descartables', tipo:'Para bebida caliente', unidad:'paquete', minimo:2},
+  {almacen:'CC ADM', nombre:'Removedores',          categoria:'Descartables', tipo:'',                   unidad:'paquete', minimo:1},
+  {almacen:'CC ADM', nombre:'Servilletas',          categoria:'Descartables', tipo:'',                   unidad:'paquete', minimo:2},
+  {almacen:'CC ADM', nombre:'Papel higiénico',      categoria:'Limpieza',   tipo:'',                     unidad:'paquete', minimo:2},
+  {almacen:'CC ADM', nombre:'Papel toalla',         categoria:'Limpieza',   tipo:'',                     unidad:'rollo',   minimo:2},
+  {almacen:'CC ADM', nombre:'Jabón líquido',        categoria:'Limpieza',   tipo:'',                     unidad:'unid.',   minimo:1},
+];
+const ESTADOS_TK = ['Pendiente','En evaluación','Aprobada','Atendida','Rechazada'];
+
+/* Cochera: espacios con los que arranca (edítalos desde la página o aquí) */
+/* Cocheras de la oficina. Titulares: agrega su correo desde “editar” para identificarlos sin ambigüedad. */
+const ESPACIOS_INICIALES = [
+  {codigo:'70', ubicacion:'Sótano 3', tipo:'Auto', cupos:2, titulares:[{nombre:'Claudia', email:''}, {nombre:'Daniela', email:''}], activo:true, obs:'Cochera doble'},
+  {codigo:'38', ubicacion:'Sótano 2', tipo:'Auto', cupos:1, titulares:[{nombre:'Ricardo Gallo', email:''}, {nombre:'Barbara', email:''}], activo:true, obs:'Un cupo, se turnan'},
+  {codigo:'23', ubicacion:'Sótano 2', tipo:'Auto', cupos:1, titulares:[{nombre:'Massiel', email:''}], activo:true, obs:''},
+];
+const TURNOS = {'Mañana':'8:00 – 13:00', 'Tarde':'13:00 – 19:00'};
+const TIPOS_RESERVA = ['Día completo','Mañana','Tarde'];
+const DIAS_ANTICIPACION = 14;   // hasta cuántos días adelante pueden reservar los usuarios
+const PRIORIDADES = ['Baja','Media','Alta','Urgente'];
+
+/* Campos de cada formulario. Agrega o quita campos aquí. */
+const CAMPOS = {
+  equipos: [
+    {k:'nombre', l:'Nombre del activo', req:1, ph:'Ej. Laptop HP'},
+    {k:'categoria', l:'Categoría', t:'select', o:CATS_EQ},
+    {k:'cuenta', l:'Cuenta / Área', list:'dl-cuentas'},
+    {k:'marca', l:'Marca'},
+    {k:'procesador', l:'Procesador', full:1},
+    {k:'ram', l:'RAM', ph:'Ej. 8.00 GB'},
+    {k:'serie', l:'ID dispositivo'},
+    {k:'estado', l:'Estado', t:'select', o:ESTADOS},
+    {k:'condicion', l:'Condición física', t:'select', o:CONDICIONES},
+    {k:'asignado', l:'Asignado a', list:'dl-personas'},
+    {k:'mouse', l:'Mouse', t:'select', o:['','SI','NO','PROPIO']},
+    {k:'fechaCompra', l:'Fecha de compra', ph:'dd/mm/aaaa'},
+    {k:'mantenimiento', l:'Último mantenimiento', ph:'dd/mm/aaaa'},
+    {k:'obs', l:'Observaciones del activo', t:'textarea', full:1},
+  ],
+  sillas: [
+    {k:'codigo', l:'Código', ph:'Ej. SIL-001 o el de la etiqueta'},
+    {k:'nombre', l:'Descripción', ph:'Ej. Silla ergonómica negra'},
+    {k:'tipo', l:'Tipo', t:'select', o:TIPOS_SILLA},
+    {k:'cuenta', l:'Cuenta / Área', list:'dl-cuentas'},
+    {k:'asignado', l:'Asignado a', list:'dl-personas'},
+    {k:'ubicacion', l:'Ubicación', ph:'Ej. Piso 3 – escritorio 12'},
+    {k:'estado', l:'Estado', t:'select', o:ESTADOS},
+    {k:'condicion', l:'Condición física', t:'select', o:CONDICIONES},
+    {k:'marca', l:'Marca / Modelo'},
+    {k:'color', l:'Color'},
+    {k:'fechaCompra', l:'Fecha de compra', ph:'dd/mm/aaaa'},
+    {k:'obs', l:'Observaciones', t:'textarea', full:1},
+  ]
+};
+
+/* Columnas del CSV (encabezado ↔ campo) */
+const CSV_COLS = {
+  equipos: [['ID','id'],['Nombre','nombre'],['Categoria','categoria'],['Cuenta','cuenta'],['Marca','marca'],['Procesador','procesador'],['RAM','ram'],['ID Dispositivo','serie'],['Estado','estado'],['Condicion','condicion'],['Asignado a','asignado'],['Fecha compra','fechaCompra'],['Mantenimiento','mantenimiento'],['Mouse','mouse'],['Observaciones','obs']],
+  sillas:  [['Codigo','codigo'],['Descripcion','nombre'],['Tipo','tipo'],['Cuenta','cuenta'],['Asignado a','asignado'],['Ubicacion','ubicacion'],['Estado','estado'],['Condicion','condicion'],['Marca','marca'],['Color','color'],['Fecha compra','fechaCompra'],['Observaciones','obs']]
+};
+const ALIAS = {
+  'id':'id','nombre':'nombre','descripcion':'nombre','categoria':'categoria','cuenta':'cuenta','cuenta / area':'cuenta','area':'cuenta',
+  'marca':'marca','marca / modelo':'marca','procesador':'procesador','ram':'ram','id dispositivo':'serie','serie':'serie',
+  'estado':'estado','condicion':'condicion','condicion fisica':'condicion','asignado a':'asignado','asignado':'asignado',
+  'fecha compra':'fechaCompra','fecha de compra':'fechaCompra','mantenimiento':'mantenimiento','ultimo mantenimiento':'mantenimiento',
+  'mouse':'mouse','observaciones':'obs','observacion':'obs','obs':'obs','codigo':'codigo','tipo':'tipo','ubicacion':'ubicacion','color':'color'
+};
+
+/* =========================================================
+   DATOS — se guardan en este navegador (localStorage).
+   Para conectar Google Sheets, reemplaza cargar() y persistir().
+   ========================================================= */
+let db;
+function baseVacia(){ return {equipos:[], sillas:[], items:[], movs:[], historial:[], tickets:[], espacios:[], reservas:[], liberaciones:[], seq:1, tkSeq:1}; }
+function cargar(){
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(KEY)); } catch(e){}
+  if (d && d.equipos) db = d;
+  else { db = baseVacia(); if (!REMOTO) ECONOMATO_INICIAL.forEach(i => db.items.push({id: sig(), ...i})); }
+  // Migración: versiones anteriores no tenían almacenes, tickets ni cochera
+  db.tickets ??= []; db.tkSeq ??= 1;
+  db.espacios ??= [];
+  // Sin servidor: la primera vez se crean las cocheras 70, 38 y 23 (con servidor las crea contabilidad al iniciar)
+  if (!REMOTO && !db.espacios.length && !db.cocherasIni) db.espacios = ESPACIOS_INICIALES.map(e => ({id: sig(), ...JSON.parse(JSON.stringify(e))}));
+  db.cocherasIni = true;
+  db.reservas ??= []; db.liberaciones ??= [];
+  db.espacios.forEach(e => { if (e.fijo && !titularesDe(e).length) e.titulares = [{nombre:e.fijo, email:''}]; delete e.fijo; e.cupos = cuposDe(e); e.titulares = titularesDe(e); });
+  if (!REMOTO) migrarCocherasEjemplo();
+  db.items.forEach(i => i.almacen ??= 'Oficina');
+  if (!REMOTO && !db.items.some(i => i.almacen === 'CC ADM')) CC_ADM_INICIAL.forEach(i => db.items.push({id: sig(), ...i}));
+  db.seq = Math.max(+db.seq || 1, Date.now());   // ids únicos aunque se trabaje desde varias sesiones
+  guardarLocal();
+}
+function guardarLocal(){ try { localStorage.setItem(KEY, JSON.stringify(db)); } catch(e){} }
+function persistir(){ guardarLocal(); if (REMOTO && esAdmin()) programarSync(); }
+function sig(){ return 'x' + (db.seq++); }
+
+/* =========================================================
+   UTILIDADES
+   ========================================================= */
+const $  = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+const hoyISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
+const isoAFecha = f => f ? f.split('-').reverse().join('/') : '—';
+const v = x => x ? esc(x) : '<span class="muted">—</span>';
+function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 2400); }
+function diasEntre(a, b){ return Math.round((new Date(b) - new Date(a)) / 86400000); }
+
+const CLS_ESTADO = {Disponible:'t-ok', Asignado:'t-blue', Mantenimiento:'t-warn', Inactivo:'t-gray'};
+const CLS_COND   = {'Bueno':'t-ok','Regular':'t-warn','Malo':'t-bad','No funciona':'t-bad'};
+const COLOR_COND = {'Bueno':'var(--ok)','Regular':'#f59e0b','Malo':'#ef4444','No funciona':'#991b1b'};
+const tagE = e => `<span class="tag ${CLS_ESTADO[e]||'t-gray'}">${esc(e||'—')}</span>`;
+const tagC = c => c ? `<span class="tag ${CLS_COND[c]||'t-gray'}">${esc(c)}</span>` : '<span class="muted">—</span>';
+
+function inferirCondicion(a){
+  const t = `${a.obs||''} ${a.mantenimiento||''}`;
+  if (/no funciona (el|la|los|las)|mousepad|micr[oó]fono|solo funciona|bater/i.test(t)) return 'Regular';
+  if (/no funciona|no es posible arreglar|malogrado|averiad/i.test(t)) return 'No funciona';
+  return 'Bueno';
+}
+const estadoValido = e => ESTADOS.find(x => norm(x) === norm(e)) || 'Disponible';
+const condValida   = c => CONDICIONES.find(x => norm(x) === norm(c)) || '';
+
+function limpiarEquipo(r){
+  const a = {};
+  CSV_COLS.equipos.forEach(([,k]) => a[k] = String(r[k] ?? '').replace(/\s+/g,' ').trim());
+  a.nombre = a.nombre.replace(/^LAPTOP\b/,'Laptop');
+  const cat = norm(a.categoria);
+  a.categoria = /monitor/i.test(a.nombre) || cat === 'computadores' ? 'Monitor'
+              : cat === 'pc' ? 'PC' : cat === 'laptop' || !cat ? 'Laptop' : (CATS_EQ.find(c => norm(c) === cat) || 'Otro');
+  if (/^https?:\/\//i.test(a.serie)) {   // en la base original había un enlace pegado en este campo
+    a.obs = (a.obs ? a.obs + ' · ' : '') + 'ID dispositivo vacío (había un enlace pegado por error)';
+    a.serie = '';
+  }
+  a.estado = estadoValido(a.estado);
+  a.condicion = condValida(a.condicion) || inferirCondicion(a);
+  return a;
+}
+
+/* Personas = quienes tienen algo asignado (equipos o sillas) */
+function personas(){
+  const m = new Map();
+  [...db.equipos, ...db.sillas].forEach(a => {
+    if (!a.asignado) return;
+    const k = norm(a.asignado);
+    if (!m.has(k)) m.set(k, {nombre:a.asignado, cuenta:a.cuenta||'', equipos:[]});
+    if (db.equipos.includes(a)) m.get(k).equipos.push(a);
+  });
+  return m;
+}
+const cuentas = () => [...new Set([...db.equipos, ...db.sillas].map(a => a.cuenta || 'Sin cuenta'))].sort();
+const etiquetaSilla = s => s.codigo || s.asignado || s.nombre || 'Silla sin datos';
+
+/* =========================================================
+   NAVEGACIÓN Y ESTADO DE PANTALLA
+   ========================================================= */
+const ui = { cochFecha:'', catEq:'Laptop', chipSilla:'todas', catEstado:'Laptop', catEco:'', almacen:'Oficina', chipTk:'abiertas', f:{equipos:{}, sillas:{}} };
+$$('#nav button').forEach(b => b.onclick = () => irA(b.dataset.view, b.dataset.alm));
+function irA(view, alm){
+  if (usuario && !esAdmin() && !VISTAS_USUARIO.includes(view)) { toast(`Solo ${ADMIN_EMAIL} puede entrar a esa sección`); view = 'panel'; alm = null; }
+  if (alm && alm !== ui.almacen) { ui.almacen = alm; ui.catEco = ''; $('#f-mov-item').value = ''; render(); }
+  $$('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === view && (!b.dataset.alm || b.dataset.alm === ui.almacen)));
+  $$('.view').forEach(s => s.classList.toggle('active', s.id === 'view-' + view));
+  window.scrollTo(0,0);
+}
+$$('[data-f]').forEach(el => el.addEventListener('input', () => { ui.f[el.dataset.f][el.dataset.k] = el.value; render(); }));
+['#f-mov-item','#f-mov-tipo','#f-hist','#f-tk-q','#f-tk-alm'].forEach(s => $(s).addEventListener('input', render));
+$('#f-coch-fecha').addEventListener('change', e => { if (e.target.value) { ui.cochFecha = e.target.value; render(); } });
+
+function llenarSelects(){
+  const ops = { estado:['Todos los estados',...ESTADOS], condicion:['Todas las condiciones',...CONDICIONES], cuenta:['Todas las cuentas',...cuentas()] };
+  $$('select[data-f]').forEach(sel => {
+    const actual = sel.value, lista = ops[sel.dataset.k];
+    sel.innerHTML = lista.map((o,i) => `<option value="${i ? esc(o) : ''}">${esc(o)}</option>`).join('');
+    sel.value = lista.includes(actual) ? actual : '';
+  });
+  $('#dl-cuentas').innerHTML = cuentas().filter(c => c !== 'Sin cuenta').map(c => `<option value="${esc(c)}">`).join('');
+  $('#dl-personas').innerHTML = [...personas().values()].map(p => `<option value="${esc(p.nombre)}">`).join('');
+  const fi = $('#f-mov-item'), act = fi.value;
+  const delAlm = db.items.filter(i => i.almacen === ui.almacen);
+  fi.innerHTML = '<option value="">Todos los artículos</option>' + delAlm.map(i => `<option value="${i.id}">${esc(i.nombre)}</option>`).join('');
+  fi.value = delAlm.some(i => i.id === act) ? act : '';
+}
+function filtrar(lista, f){
+  const q = norm(f.q);
+  return lista.filter(a =>
+    (!f.estado || a.estado === f.estado) &&
+    (!f.condicion || a.condicion === f.condicion) &&
+    (!f.cuenta || (a.cuenta || 'Sin cuenta') === f.cuenta) &&
+    (!q || norm(Object.values(a).join(' ')).includes(q)));
+}
+
+/* =========================================================
+   RENDER
+   ========================================================= */
+function render(){
+  llenarSelects();
+  const rev = revisar(), eco = calcEconomato();
+  const atencion = [...db.equipos, ...db.sillas].filter(necesitaAtencion).length;
+  $('#c-equipos').textContent = db.equipos.length;
+  $('#c-sillas').textContent = db.sillas.length;
+  $('#c-estado').textContent = atencion; $('#c-estado').classList.toggle('alert', atencion > 0);
+  Object.keys(ALMACENES).forEach(al => {
+    const n = db.items.filter(i => i.almacen === al && ['Agotado','Bajo'].includes(eco[i.id].status)).length;
+    const el = document.getElementById('c-eco-' + al); el.textContent = n; el.classList.toggle('alert', n > 0);
+  });
+  const abiertos = misTickets().filter(tkAbierto).length;
+  $('#c-tk').textContent = abiertos; $('#c-tk').classList.toggle('alert', esAdmin() && db.tickets.some(t => t.estado === 'Pendiente'));
+  renderUsuario();
+  renderCochera();
+  renderPanel(rev, eco); renderEquipos(); renderSillas(); renderEstado(rev); renderEconomato(eco); renderTickets(eco); renderHistorial();
+  if ($('#overlay-tk').classList.contains('open')) verTicket(tkAbiertoId);
+}
+
+function kpi(t, n, s, cls=''){ return `<div class="kpi ${cls}"><span>${t}</span><b>${n}</b><small>${s}</small></div>`; }
+const cuenta = (l, e) => l.filter(a => a.estado === e).length;
+
+/* ---------- Panel ---------- */
+function renderPanel(rev, eco){
+  const rsp = respaldo(), bd = $('#btn-deshacer');
+  bd.style.display = rsp ? '' : 'none'; if (rsp) bd.title = 'Carga del ' + rsp.fecha;
+  const laps = db.equipos.filter(a => a.categoria === 'Laptop');
+  const sinSilla = sinSillaLista().length;
+  const agot = db.items.filter(i => eco[i.id].status === 'Agotado');
+  $('#kpis-panel').innerHTML =
+    kpi('💻 Laptops', laps.length, `${cuenta(laps,'Asignado')} asignadas · ${cuenta(laps,'Disponible')} disponibles`) +
+    kpi('🖥️ PC y monitores', db.equipos.length - laps.length, 'otros equipos de cómputo') +
+    kpi('🪑 Sillas', db.sillas.length, `${cuenta(db.sillas,'Asignado')} asignadas`) +
+    kpi('Sin silla', sinSilla, 'colaboradores con equipo', sinSilla ? 'amber' : '') +
+    kpi('Agotados', agot.length, 'oficina + CC ADM', agot.length ? 'red' : 'green') +
+    (esAdmin() ? kpi('🎫 Solicitudes abiertas', db.tickets.filter(tkAbierto).length, `${db.tickets.filter(t => t.estado === 'Pendiente').length} pendientes de revisar`)
+               : kpi('🎫 Mis solicitudes abiertas', misTickets().filter(tkAbierto).length, 'en curso')) +
+    (() => { const h = cocheraHoy(); return kpi('🚗 Cochera ahora', `${h.libres}/${h.total}`, `libres · ${h.turno ? 'turno ' + h.turno.toLowerCase() : 'fuera de horario'}`, h.total && !h.libres ? 'red' : 'green'); })();
+
+  const filas = cuentas().map(c => {
+    const eq = db.equipos.filter(a => (a.cuenta||'Sin cuenta') === c), si = db.sillas.filter(a => (a.cuenta||'Sin cuenta') === c);
+    const l = eq.filter(a => a.categoria === 'Laptop').length;
+    return `<tr><td>${esc(c)}</td><td class="num">${l}</td><td class="num">${eq.length - l}</td><td class="num">${si.length}</td><td class="num"><b>${eq.length + si.length}</b></td></tr>`;
+  });
+  $('#tb-panel').innerHTML = filas.join('') || '<tr><td colspan="5" class="empty">Sin activos.</td></tr>';
+
+  const al = [];
+  const pend = db.tickets.filter(t => t.estado === 'Pendiente');
+  if (!esAdmin()) {   // usuarios: sus solicitudes y avisos de stock, sin enlaces a secciones de administración
+    const mias = misTickets().filter(tkAbierto);
+    if (mias.length) al.push(['t-blue','Mis solicitudes', `Tienes ${mias.length} ${mias.length === 1 ? 'solicitud abierta' : 'solicitudes abiertas'}: ${mias.map(t => `${t.id} (${t.estado})`).join(', ')}`, "irA('solicitudes')"]);
+    agot.forEach(i => al.push(['t-bad','Agotado', `${esc(i.nombre)} (${esc(i.almacen)})`, '']));
+    db.items.filter(i => eco[i.id].status === 'Bajo').forEach(i => al.push(['t-warn','Stock bajo', `${esc(i.nombre)} (${esc(i.almacen)})`, '']));
+    $('#panel-alertas').innerHTML = al.length
+      ? al.map(([c,t,txt,fn]) => `<li><span class="tag ${c}">${t}</span><span style="flex:1">${txt}</span>${fn ? `<button class="link" onclick="${fn}">Ver</button>` : ''}</li>`).join('')
+      : '<li class="muted">Todo en orden. Si necesitas algo, crea una solicitud.</li>';
+    return;
+  }
+  if (pend.length) al.push(['t-blue','Solicitudes', `${pend.length} ${pend.length === 1 ? 'ticket nuevo' : 'tickets nuevos'} por revisar (${pend.map(t => t.id).join(', ')})`, "irA('solicitudes')"]);
+  const ir = i => `irA('economato','${i.almacen}')`;
+  agot.forEach(i => al.push(['t-bad','Agotado', `${esc(i.nombre)} (${esc(i.almacen)}) — sin stock desde ${isoAFecha(eco[i.id].ultAgotado)}`, ir(i)]));
+  db.items.filter(i => eco[i.id].status === 'Bajo').forEach(i => al.push(['t-warn','Stock bajo', `${esc(i.nombre)} (${esc(i.almacen)}) — quedan ${eco[i.id].stock} ${esc(i.unidad)}`, ir(i)]));
+  const at = [...db.equipos, ...db.sillas].filter(necesitaAtencion).length;
+  if (at) al.push(['t-warn','Estado', `${at} activos con fallas o en mantenimiento`, "irA('estado')"]);
+  if (sinSilla) al.push(['t-blue','Sillas', `${sinSilla} colaboradores con equipo pero sin silla registrada`, "irA('sillas')"]);
+  if (rev.length) al.push(['t-gray','Datos', `${rev.length} inconsistencias en la base por revisar`, "irA('estado')"]);
+  $('#panel-alertas').innerHTML = al.length
+    ? al.map(([c,t,txt,fn]) => `<li><span class="tag ${c}">${t}</span><span style="flex:1">${txt}</span><button class="link" onclick="${fn}">Ver</button></li>`).join('')
+    : '<li class="muted">Todo en orden.</li>';
+}
+
+/* ---------- Laptops y equipos ---------- */
+function renderEquipos(){
+  const cats = ['Laptop','PC','Monitor','Otro'].filter(c => c === 'Laptop' || db.equipos.some(a => a.categoria === c));
+  $('#chips-equipos').innerHTML = [...cats, 'Todos'].map(c => {
+    const n = c === 'Todos' ? db.equipos.length : db.equipos.filter(a => a.categoria === c).length;
+    const ico = {Laptop:'💻 Laptops',PC:'🖥️ PC',Monitor:'🖵 Monitores',Otro:'Otros',Todos:'Todos'}[c];
+    return `<button class="chip ${ui.catEq === c ? 'on' : ''}" onclick="ui.catEq='${c}';render()">${ico}<small>${n}</small></button>`;
+  }).join('');
+  const base = ui.catEq === 'Todos' ? db.equipos : db.equipos.filter(a => a.categoria === ui.catEq);
+  $('#kpis-equipos').innerHTML =
+    kpi('Total', base.length, 'registrados') + kpi('Asignados', cuenta(base,'Asignado'), 'en uso') +
+    kpi('Disponibles', cuenta(base,'Disponible'), 'listos para asignar', 'green') +
+    kpi('Mantenimiento', cuenta(base,'Mantenimiento'), 'en revisión', 'amber') +
+    kpi('Inactivos', cuenta(base,'Inactivo'), 'fuera de uso') +
+    kpi('No funcionan', base.filter(a => a.condicion === 'No funciona').length, 'condición física', 'red');
+  tablaPorCuenta(base, '#tb-equipos-cuenta');
+
+  const lista = filtrar(base, ui.f.equipos);
+  $('#tb-equipos').innerHTML = lista.length ? lista.map(a => `<tr>
+    <td><b>${esc(a.id)}</b></td><td>${esc(a.nombre)}</td><td>${v(a.cuenta)}</td>
+    <td><span class="trunc" title="${esc(a.procesador)}">${v(a.procesador)}</span></td><td>${v(a.ram)}</td>
+    <td><span class="trunc" style="max-width:150px" title="${esc(a.serie)}">${v(a.serie)}</span></td>
+    <td>${tagE(a.estado)}</td><td>${tagC(a.condicion)}</td><td>${v(a.asignado)}</td>
+    <td>${v(a.fechaCompra)}</td><td>${v(a.mantenimiento)}</td><td>${v(a.mouse)}</td><td class="wrap">${esc(a.obs)}</td>
+    <td><button class="btn sm" onclick="formActivo('equipos','${esc(a.id)}')">Editar</button> <button class="btn sm danger" onclick="eliminarActivo('equipos','${esc(a.id)}')">✕</button></td></tr>`).join('')
+    : '<tr><td colspan="14" class="empty">Sin resultados.</td></tr>';
+}
+function tablaPorCuenta(lista, el){
+  const g = {};
+  lista.forEach(a => { const c = a.cuenta || 'Sin cuenta'; g[c] ??= {t:0,a:0,d:0,o:0}; g[c].t++;
+    if (a.estado === 'Asignado') g[c].a++; else if (a.estado === 'Disponible') g[c].d++; else g[c].o++; });
+  const f = Object.entries(g).sort((x,y) => y[1].t - x[1].t);
+  $(el).innerHTML = f.length ? f.map(([c,x]) => `<tr><td>${esc(c)}</td><td class="num"><b>${x.t}</b></td><td class="num">${x.a}</td><td class="num">${x.d}</td><td class="num">${x.o}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty">Sin registros.</td></tr>';
+}
+
+/* ---------- Sillas ---------- */
+function sinSillaLista(){
+  const conSilla = new Set(db.sillas.filter(s => s.asignado).map(s => norm(s.asignado)));
+  return [...personas().entries()].filter(([k,p]) => p.equipos.length && !conSilla.has(k)).map(([,p]) => p)
+    .sort((a,b) => a.nombre.localeCompare(b.nombre));
+}
+function renderSillas(){
+  const S = db.sillas, sinSilla = sinSillaLista();
+  $('#kpis-sillas').innerHTML =
+    kpi('Total sillas', S.length, 'registradas') + kpi('Asignadas', cuenta(S,'Asignado'), 'en uso') +
+    kpi('Disponibles', cuenta(S,'Disponible'), 'libres', 'green') +
+    kpi('Sin código', S.filter(s => !s.codigo).length, 'falta etiquetar', 'amber') +
+    kpi('Sin asignar', S.filter(s => !s.asignado).length, 'nadie la usa') +
+    kpi('Colaboradores sin silla', sinSilla.length, 'tienen equipo, no silla', sinSilla.length ? 'red' : 'green');
+
+  const chips = [['todas','Todas',S.length],['sincodigo','Sin código',S.filter(s=>!s.codigo).length],
+    ['sinasignar','Sin asignar',S.filter(s=>!s.asignado).length],['atencion','Requieren atención',S.filter(necesitaAtencion).length]];
+  $('#chips-sillas').innerHTML = chips.map(([k,t,n]) => `<button class="chip ${ui.chipSilla===k?'on':''}" onclick="ui.chipSilla='${k}';render()">${t}<small>${n}</small></button>`).join('');
+
+  let lista = filtrar(S, ui.f.sillas);
+  if (ui.chipSilla === 'sincodigo') lista = lista.filter(s => !s.codigo);
+  if (ui.chipSilla === 'sinasignar') lista = lista.filter(s => !s.asignado);
+  if (ui.chipSilla === 'atencion') lista = lista.filter(necesitaAtencion);
+  $('#tb-sillas').innerHTML = lista.length ? lista.map(s => `<tr>
+    <td>${s.codigo ? `<b>${esc(s.codigo)}</b>` : '<span class="tag t-warn">Sin código</span>'}</td>
+    <td>${v(s.nombre)}</td><td>${v(s.tipo)}</td><td>${v(s.cuenta)}</td>
+    <td>${s.asignado ? esc(s.asignado) : '<span class="tag t-gray">Sin asignar</span>'}</td>
+    <td>${v(s.ubicacion)}</td><td>${tagE(s.estado)}</td><td>${tagC(s.condicion)}</td><td>${v(s.fechaCompra)}</td><td class="wrap">${esc(s.obs)}</td>
+    <td><button class="btn sm" onclick="formActivo('sillas','${s.id}')">Editar</button> <button class="btn sm danger" onclick="eliminarActivo('sillas','${s.id}')">✕</button></td></tr>`).join('')
+    : `<tr><td colspan="11" class="empty">${S.length ? 'Sin resultados.' : 'Aún no hay sillas. Usa “+ Registrar silla”, o “Asignar silla” en la lista de colaboradores sin silla.'}</td></tr>`;
+
+  $('#tb-sin-silla').innerHTML = sinSilla.length ? sinSilla.map((p,i) => `<tr>
+    <td><b>${esc(p.nombre)}</b></td><td>${v(p.cuenta)}</td>
+    <td class="wrap">${p.equipos.map(e => `${esc(e.categoria)} #${esc(e.id)}`).join(', ')}</td>
+    <td><button class="btn sm" onclick="asignarSilla(${i})">+ Asignar silla</button></td></tr>`).join('')
+    : '<tr><td colspan="4" class="empty">Todos los colaboradores con equipo tienen silla.</td></tr>';
+}
+function asignarSilla(i){
+  if (!soloAdmin()) return;
+  const p = sinSillaLista()[i];
+  formActivo('sillas', null, {asignado:p.nombre, cuenta:p.cuenta, estado:'Asignado', condicion:'Bueno'});
+}
+
+/* ---------- Estado de equipos ---------- */
+const necesitaAtencion = a => ['Regular','Malo','No funciona'].includes(a.condicion) || a.estado === 'Mantenimiento';
+function renderEstado(rev){
+  const grupos = {Laptop:['💻 Laptops', db.equipos.filter(a => a.categoria === 'Laptop')],
+                  Silla:['🪑 Sillas', db.sillas],
+                  Otros:['🖥️ PC y monitores', db.equipos.filter(a => a.categoria !== 'Laptop')]};
+  $('#chips-estado').innerHTML = Object.entries(grupos).map(([k,[t,l]]) =>
+    `<button class="chip ${ui.catEstado===k?'on':''}" onclick="ui.catEstado='${k}';render()">${t}<small>${l.length}</small></button>`).join('');
+  const [, lista] = grupos[ui.catEstado];
+  const total = lista.length || 1;
+
+  $('#estado-cond').innerHTML = CONDICIONES.map(c => {
+    const n = lista.filter(a => a.condicion === c).length;
+    return `<div class="cond-row"><span>${c}</span><div class="bar"><i style="width:${n/total*100}%;background:${COLOR_COND[c]}"></i></div><b>${n}</b></div>`;
+  }).join('') + (lista.length ? '' : '<p class="muted" style="margin-top:8px">Sin registros en este grupo.</p>');
+
+  $('#estado-matriz').innerHTML = `<thead><tr><th></th>${CONDICIONES.map(c => `<th class="num">${c}</th>`).join('')}<th class="num">Total</th></tr></thead><tbody>` +
+    ESTADOS.map(e => { const fila = lista.filter(a => a.estado === e);
+      return `<tr><td>${tagE(e)}</td>${CONDICIONES.map(c => { const n = fila.filter(a => a.condicion === c).length; return `<td class="num">${n || '<span class="muted">·</span>'}</td>`; }).join('')}<td class="num"><b>${fila.length}</b></td></tr>`;
+    }).join('') + '</tbody>';
+
+  const esSilla = ui.catEstado === 'Silla';
+  const at = lista.filter(necesitaAtencion);
+  $('#tb-atencion').innerHTML = at.length ? at.map(a => `<tr>
+    <td><b>${esSilla ? esc(etiquetaSilla(a)) : esc(a.nombre) + ' #' + esc(a.id)}</b></td><td>${v(a.asignado)}</td><td>${v(a.cuenta)}</td>
+    <td>${tagE(a.estado)}</td><td>${tagC(a.condicion)}</td><td class="wrap">${esc([a.obs, esSilla ? '' : a.mantenimiento].filter(Boolean).join(' · '))}</td>
+    <td><button class="btn sm" onclick="formActivo('${esSilla ? 'sillas' : 'equipos'}','${esc(a.id)}')">Actualizar</button></td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty">Nada requiere atención en este grupo.</td></tr>';
+
+  $('#lista-revisar').innerHTML = rev.length
+    ? rev.map(r => `<li><span class="tag ${r[0]}">${r[1]}</span><span style="flex:1">${r[2]}</span>${r[3] ? `<button class="link" onclick="${r[3]}">Corregir</button>` : ''}</li>`).join('')
+    : '<li class="muted">No se encontraron inconsistencias.</li>';
+}
+
+/* Revisión automática de la base */
+function lev(a, b){
+  const d = Array.from({length:a.length+1}, (_,i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+function revisar(){
+  const r = [], ed = id => `formActivo('equipos','${esc(id)}')`, es = id => `formActivo('sillas','${id}')`;
+  const series = {};
+  db.equipos.forEach(a => { if (a.serie) (series[a.serie] ??= []).push(a); });
+  Object.entries(series).filter(([,l]) => l.length > 1).forEach(([s,l]) =>
+    r.push(['t-bad','ID repetido', `El ID de dispositivo <b>${esc(s)}</b> aparece en ${l.map(a => `#${esc(a.id)} (${esc(a.asignado||'sin asignar')})`).join(' y ')}`, ed(l[1].id)]));
+  [...db.equipos.map(a => [a, ed(a.id), `${esc(a.nombre)} #${esc(a.id)}`]), ...db.sillas.map(s => [s, es(s.id), `Silla ${esc(etiquetaSilla(s))}`])].forEach(([a, fn, nom]) => {
+    if (a.estado === 'Disponible' && a.asignado) r.push(['t-warn','Estado', `${nom} figura <b>Disponible</b> pero está a nombre de ${esc(a.asignado)}`, fn]);
+    if (a.estado === 'Asignado' && !a.asignado) r.push(['t-warn','Estado', `${nom} figura <b>Asignado</b> pero no tiene persona`, fn]);
+    if (a.condicion === 'No funciona' && ['Asignado','Disponible'].includes(a.estado)) r.push(['t-bad','Condición', `${nom} <b>no funciona</b> pero figura ${a.estado}`, fn]);
+  });
+  const nombres = [...personas().values()].map(p => p.nombre);
+  for (let i = 0; i < nombres.length; i++) for (let j = i+1; j < nombres.length; j++) {
+    const a = norm(nombres[i]), b = norm(nombres[j]);
+    if (Math.abs(a.length - b.length) <= 2 && lev(a, b) <= 2)
+      r.push(['t-gray','Nombre', `“${esc(nombres[i])}” y “${esc(nombres[j])}” parecen la misma persona escrita distinto`, '']);
+  }
+  return r;
+}
+
+/* ---------- Economato ---------- */
+function calcEconomato(){
+  const res = {};
+  db.items.forEach(i => res[i.id] = {stock:0, ultCompra:null, ultSalida:null, ultAgotado:null, ciclos:[], movs:0});
+  const orden = [...db.movs].sort((a,b) => a.fecha.localeCompare(b.fecha) || a.n - b.n);
+  orden.forEach(m => {
+    const r = res[m.itemId]; if (!r) return;
+    const prev = r.stock, q = +m.cantidad || 0;
+    if (m.tipo === 'Compra') { r.stock += q; r.ultCompra = m.fecha; }
+    else if (m.tipo === 'Salida') { r.stock -= q; r.ultSalida = m.fecha; }
+    else r.stock = q;
+    r.movs++; m._stock = r.stock;
+    if (prev > 0 && r.stock <= 0) { r.ultAgotado = m.fecha; r.ciclos.push({agotado:m.fecha, repuesto:null, cantidad:null}); }
+    const abierto = r.ciclos[r.ciclos.length - 1];
+    if (prev <= 0 && r.stock > 0 && abierto && !abierto.repuesto) { abierto.repuesto = m.fecha; abierto.cantidad = r.stock; }
+  });
+  db.items.forEach(i => { const r = res[i.id];
+    r.status = !r.movs ? 'Sin registro' : r.stock <= 0 ? 'Agotado' : r.stock <= (+i.minimo || 0) ? 'Bajo' : 'OK'; });
+  return res;
+}
+function pedidoAbierto(itemId){
+  return db.tickets.filter(tkAbierto).reduce((s,t) => s + t.lineas.filter(l => l.itemId === itemId).reduce((a,l) => a + (+l.cantidad||0), 0), 0);
+}
+function renderEconomato(eco){
+  $('#eco-title').textContent = ALMACENES[ui.almacen].titulo;
+  $('#eco-sub').textContent = ALMACENES[ui.almacen].sub;
+  const delAlm = db.items.filter(i => i.almacen === ui.almacen);
+  const cats = [...new Set(delAlm.map(i => i.categoria))];
+  if (ui.catEco && !cats.includes(ui.catEco)) ui.catEco = '';
+  $('#chips-eco').innerHTML = [['','Todo'], ...cats.map(c => [c,c])].map(([k,t]) =>
+    `<button class="chip ${ui.catEco===k?'on':''}" onclick="ui.catEco='${esc(k)}';render()">${esc(t)}<small>${k ? delAlm.filter(i=>i.categoria===k).length : delAlm.length}</small></button>`).join('');
+  const items = delAlm.filter(i => !ui.catEco || i.categoria === ui.catEco);
+  const st = s => items.filter(i => eco[i.id].status === s).length;
+  const mes = hoyISO().slice(0,7), ids = new Set(delAlm.map(i => i.id));
+  const gastoMes = db.movs.filter(m => ids.has(m.itemId) && m.tipo === 'Compra' && m.fecha.startsWith(mes)).reduce((s,m) => s + (+m.costo || 0), 0);
+  $('#kpis-eco').innerHTML =
+    kpi('Artículos', items.length, ui.catEco || 'todas las categorías') +
+    kpi('Agotados', st('Agotado'), 'stock en 0', st('Agotado') ? 'red' : 'green') +
+    kpi('Stock bajo', st('Bajo'), 'en o bajo el mínimo', st('Bajo') ? 'amber' : '') +
+    kpi('Sin registro', st('Sin registro'), 'aún sin conteo inicial') +
+    kpi(ui.almacen === 'CC ADM' ? 'Gasto caja chica del mes' : 'Compras del mes', 'S/ ' + gastoMes.toFixed(2), 'según costos registrados') +
+    kpi('Pedido en solicitudes', items.reduce((s,i) => s + pedidoAbierto(i.id), 0), 'unidades en tickets abiertos');
+
+  const CLS = {OK:'t-ok', Bajo:'t-warn', Agotado:'t-bad', 'Sin registro':'t-gray'};
+  $('#eco-items').innerHTML = items.length ? items.map(i => { const r = eco[i.id];
+    return `<div class="item ${r.status==='Agotado'?'agotado':r.status==='Bajo'?'bajo':''}">
+      <div class="item-top"><div><h3>${esc(i.nombre)}</h3><span class="muted" style="font-size:12px">${esc(i.categoria)}${i.tipo ? ' · Tipo ' + esc(i.tipo) : ''}</span></div><span class="tag ${CLS[r.status]}">${r.status}</span></div>
+      <div class="stock">${r.movs ? r.stock : '—'} <small>${esc(i.unidad)}</small></div>
+      <dl><dt>Mínimo</dt><dd>${esc(i.minimo)}</dd>
+          <dt>Última compra</dt><dd>${isoAFecha(r.ultCompra)}</dd>
+          <dt>Última salida</dt><dd>${isoAFecha(r.ultSalida)}</dd>
+          <dt>Se agotó</dt><dd>${r.ciclos.length ? `${r.ciclos.length} ${r.ciclos.length === 1 ? 'vez' : 'veces'}` : 'nunca'}</dd>
+          ${pedidoAbierto(i.id) ? `<dt>Pedido en tickets</dt><dd><b>${pedidoAbierto(i.id)}</b></dd>` : ''}</dl>
+      <div class="row-btns">
+        <button class="btn sm ok" onclick="formMov('${i.id}','Compra')">+ Compra</button>
+        <button class="btn sm" onclick="formMov('${i.id}','Salida')">− Salida</button>
+        <button class="btn sm" title="Conteo físico" onclick="formMov('${i.id}','Ajuste')">Contar</button>
+      </div>
+      <div style="text-align:right"><button class="link" onclick="formItem('${i.id}')">editar artículo</button></div>
+    </div>`; }).join('')
+    : '<p class="muted">No hay artículos. Usa “+ Nuevo artículo”.</p>';
+
+  const ciclos = items
+    .flatMap(i => eco[i.id].ciclos.map(c => ({...c, item:i})))
+    .sort((a,b) => b.agotado.localeCompare(a.agotado));
+  $('#tb-ciclos').innerHTML = ciclos.length ? ciclos.map(c => `<tr>
+    <td><b>${esc(c.item.nombre)}</b></td><td>${isoAFecha(c.agotado)}</td>
+    <td>${c.repuesto ? isoAFecha(c.repuesto) : '<span class="tag t-bad">Sigue agotado</span>'}</td>
+    <td class="num">${diasEntre(c.agotado, c.repuesto || hoyISO())}${c.repuesto ? '' : ' (y contando)'}</td>
+    <td class="num">${c.cantidad ?? '—'}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty">Todavía no se ha agotado ningún artículo.</td></tr>';
+
+  const fItem = $('#f-mov-item').value, fTipo = $('#f-mov-tipo').value;
+  const idsVista = new Set(items.map(i => i.id));
+  const movs = db.movs.filter(m => (!fItem || m.itemId === fItem) && (!fTipo || m.tipo === fTipo) && idsVista.has(m.itemId))
+    .sort((a,b) => b.fecha.localeCompare(a.fecha) || b.n - a.n);
+  const nom = id => db.items.find(i => i.id === id)?.nombre || '(eliminado)';
+  const MC = {Compra:'t-ok', Salida:'t-blue', Ajuste:'t-gray'};
+  $('#tb-movs').innerHTML = movs.length ? movs.map(m => `<tr>
+    <td>${isoAFecha(m.fecha)}</td><td>${esc(nom(m.itemId))}</td><td><span class="tag ${MC[m.tipo]}">${m.tipo === 'Ajuste' ? 'Conteo físico' : m.tipo}</span></td>
+    <td class="num">${m.tipo === 'Compra' ? '+' : m.tipo === 'Salida' ? '−' : '='}${esc(m.cantidad)}</td>
+    <td class="num"><b>${m._stock ?? ''}</b>${m._stock === 0 ? ' <span class="tag t-bad">Agotado</span>' : ''}</td>
+    <td class="num">${m.costo ? (+m.costo).toFixed(2) : '<span class="muted">—</span>'}</td>
+    <td>${v(m.por)}</td><td class="wrap">${esc(m.obs)}</td>
+    <td><button class="btn sm danger" onclick="eliminarMov('${m.id}')">✕</button></td></tr>`).join('')
+    : '<tr><td colspan="9" class="empty">Sin movimientos. Empieza con “Contar” para registrar cuántas hay hoy, o con “+ Compra”.</td></tr>';
+}
+
+/* ---------- Historial ---------- */
+function renderHistorial(){
+  const q = norm($('#f-hist').value);
+  const h = db.historial.filter(x => !q || norm(Object.values(x).join(' ')).includes(q)).slice().reverse();
+  $('#tb-historial').innerHTML = h.length ? h.map(x => `<tr>
+    <td>${esc(x.fecha)}</td><td>${esc(x.base)}</td><td><b>${esc(x.ref)}</b> ${esc(x.nombre)}</td><td>${esc(x.accion)}</td>
+    <td>${x.estado ? tagE(x.estado) : '—'}</td><td>${tagC(x.condicion)}</td><td>${v(x.asignado)}</td><td>${v(x.por)}</td><td class="wrap">${esc(x.obs)}</td></tr>`).join('')
+    : '<tr><td colspan="9" class="empty">Sin movimientos aún. Cada cambio que hagas en equipos o sillas quedará aquí.</td></tr>';
+}
+
+/* =========================================================
+   MODAL GENÉRICO
+   ========================================================= */
+let onGuardar = null;
+function campoHTML(f, val){
+  const id = 'm_' + f.k, req = f.req ? ' required' : '', valor = esc(val ?? '');
+  let input;
+  if (f.t === 'select') input = `<select id="${id}" name="${f.k}"${req}>${f.o.map(o => {
+      const [ov, ol] = Array.isArray(o) ? o : [o, o || '—'];
+      return `<option value="${esc(ov)}"${String(ov) === String(val ?? '') ? ' selected' : ''}>${esc(ol)}</option>`; }).join('')}</select>`;
+  else if (f.t === 'textarea') input = `<textarea id="${id}" name="${f.k}" placeholder="${esc(f.ph||'')}">${valor}</textarea>`;
+  else input = `<input id="${id}" name="${f.k}" type="${f.t||'text'}" value="${valor}" placeholder="${esc(f.ph||'')}"${f.list ? ` list="${f.list}"` : ''}${f.min != null ? ` min="${f.min}" step="any"` : ''}${f.ro ? ' readonly style="background:var(--bg)"' : ''}${req}>`;
+  return `<div class="${f.full ? 'full' : ''}"><label for="${id}">${esc(f.l)}${f.req ? ' *' : ''}</label>${input}</div>`;
+}
+function abrirModal({titulo, sub, campos, valores = {}, extra = '', guardar}){
+  $('#m-title').textContent = titulo; $('#m-sub').textContent = sub || '';
+  $('#m-form').innerHTML = campos.map(f => campoHTML(f, valores[f.k])).join('') + extra;
+  $('#m-err').textContent = '';
+  onGuardar = guardar;
+  $('#overlay').classList.add('open');
+  $('#m-form').querySelector('input,select')?.focus();
+}
+function cerrarModal(){ $('#overlay').classList.remove('open'); onGuardar = null; }
+$('#m-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(e.target));
+  Object.keys(d).forEach(k => d[k] = String(d[k]).trim());
+  const err = onGuardar && onGuardar(d);
+  if (err) { $('#m-err').textContent = err; return; }
+  persistir(); cerrarModal(); render();
+});
+$('#overlay').addEventListener('click', e => { if (e.target.id === 'overlay') cerrarModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if ($('#overlay').classList.contains('open')) cerrarModal(); else cerrarTicket();
+});
+
+/* ---------- Equipos y sillas ---------- */
+const extraMov = () => `<div class="sep">Para el historial</div>
+  <div><label for="m_por">Registrado por</label><input id="m_por" name="_por" value="${esc(usuario?.nombre || '')}"></div>
+  <div><label for="m_com">Comentario del movimiento</label><input id="m_com" name="_com" placeholder="Ej. Entregada por cambio de equipo"></div>`;
+
+function formActivo(col, id, prefill = {}){
+  if (!soloAdmin()) return;
+  const a = id ? db[col].find(x => String(x.id) === String(id)) : null;
+  const esSilla = col === 'sillas';
+  abrirModal({
+    titulo: a ? `Editar ${esSilla ? 'silla ' + etiquetaSilla(a) : a.nombre + ' #' + a.id}` : (esSilla ? 'Registrar silla' : 'Crear activo'),
+    sub: esSilla ? 'Basta con el código o con el nombre de la persona; puedes completar el resto después.' : 'Registra o edita un equipo de cómputo.',
+    campos: CAMPOS[col],
+    valores: a || {categoria: ui.catEq === 'Todos' ? 'Laptop' : ui.catEq, estado: 'Disponible', condicion: 'Bueno', tipo:'Operativa', ...prefill},
+    extra: extraMov(),
+    guardar: d => {
+      if (esSilla && !d.codigo && !d.asignado && !d.nombre) return 'Ingresa al menos el código, la descripción o la persona asignada.';
+      if (esSilla && d.codigo && db.sillas.some(s => norm(s.codigo) === norm(d.codigo) && s !== a)) return `Ya existe una silla con el código ${d.codigo}.`;
+      const reg = {};
+      CAMPOS[col].forEach(f => reg[f.k] = d[f.k] || '');
+      if (reg.asignado && reg.estado === 'Disponible') reg.estado = 'Asignado';
+      let accion = 'Alta';
+      if (a) {
+        const cambios = [];
+        if (a.estado !== reg.estado) cambios.push(`Estado: ${a.estado} → ${reg.estado}`);
+        if (a.condicion !== reg.condicion) cambios.push(`Condición: ${a.condicion || '—'} → ${reg.condicion}`);
+        if (norm(a.asignado) !== norm(reg.asignado)) cambios.push(reg.asignado ? `Asignado a ${reg.asignado}${a.asignado ? ' (antes ' + a.asignado + ')' : ''}` : `Devuelto por ${a.asignado}`);
+        accion = cambios.join(' · ') || 'Edición de datos';
+        Object.assign(a, reg);
+        registrar(col, a, accion, d);
+      } else {
+        reg.id = esSilla ? sig() : String(Math.max(0, ...db.equipos.map(x => +x.id || 0)) + 1);
+        db[col].push(reg);
+        registrar(col, reg, accion, d);
+      }
+      toast('Guardado');
+    }
+  });
+}
+function eliminarActivo(col, id){
+  if (!soloAdmin()) return;
+  const a = db[col].find(x => String(x.id) === String(id));
+  const nombre = col === 'sillas' ? 'la silla ' + etiquetaSilla(a) : `${a.nombre} #${a.id}`;
+  if (!confirm(`¿Eliminar ${nombre}? Quedará registrado en el historial, pero el registro no se puede recuperar.`)) return;
+  db[col] = db[col].filter(x => x !== a);
+  registrar(col, a, 'Baja (eliminado)', {});
+  persistir(); render(); toast('Eliminado');
+}
+function registrar(col, a, accion, d){
+  db.historial.push({ fecha: new Date().toLocaleString('es-PE'), base: col === 'sillas' ? 'Sillas' : 'Equipos',
+    ref: col === 'sillas' ? (a.codigo || 'Sin código') : '#' + a.id, nombre: col === 'sillas' ? (a.nombre || '') : a.nombre,
+    accion, estado:a.estado, condicion:a.condicion, asignado:a.asignado, por:d._por || usuario?.nombre || '', obs:d._com || '' });
+}
+
+/* ---------- Economato ---------- */
+function formItem(id, prefill = {}, alGuardar){
+  if (!soloAdmin()) return;
+  const it = id ? db.items.find(i => i.id === id) : null;
+  const cats = [...new Set(['Pilas','Cafetería','Descartables','Limpieza', ...db.items.map(i => i.categoria)])];
+  abrirModal({
+    titulo: it ? 'Editar artículo' : 'Nuevo artículo',
+    sub: 'Oficina: pilas, útiles, tóner… · CC ADM: café, azúcar, vasos… El stock se calcula con los movimientos.',
+    campos: [
+      {k:'almacen', l:'Almacén', t:'select', full:1, o:Object.keys(ALMACENES).map(a => [a, ALMACENES[a].titulo])},
+      {k:'nombre', l:'Nombre', req:1, ph:'Ej. Pilas AA'},
+      {k:'categoria', l:'Categoría', req:1, list:'dl-cats-eco', ph:'Ej. Pilas'},
+      {k:'tipo', l:'Tipo / medida', ph:'Ej. AA, AAA, 9V, CR2032'},
+      {k:'unidad', l:'Unidad', ph:'unid., paquete, caja'},
+      {k:'minimo', l:'Stock mínimo (avisar al llegar a)', t:'number', min:0},
+    ],
+    valores: it || {almacen: ui.almacen, categoria: ui.catEco || (ui.almacen === 'CC ADM' ? 'Cafetería' : 'Pilas'), unidad:'unid.', minimo:2, ...prefill},
+    extra: `<datalist id="dl-cats-eco">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>` +
+      (it ? `<div class="full" style="text-align:right"><button type="button" class="btn sm danger" onclick="eliminarItem('${it.id}')">Eliminar artículo</button></div>` : ''),
+    guardar: d => {
+      if (db.items.some(i => norm(i.nombre) === norm(d.nombre) && i !== it)) return 'Ya existe un artículo con ese nombre.';
+      const reg = {almacen:d.almacen, nombre:d.nombre, categoria:d.categoria, tipo:d.tipo, unidad:d.unidad || 'unid.', minimo:+d.minimo || 0};
+      let nuevo = it;
+      if (it) Object.assign(it, reg); else { nuevo = {id:sig(), ...reg}; db.items.push(nuevo); }
+      if (alGuardar) alGuardar(nuevo);
+      toast('Artículo guardado');
+    }
+  });
+}
+function eliminarItem(id){
+  if (!soloAdmin()) return;
+  const it = db.items.find(i => i.id === id), n = db.movs.filter(m => m.itemId === id).length;
+  if (!confirm(`¿Eliminar ${it.nombre}${n ? ` y sus ${n} movimientos` : ''}?`)) return;
+  db.items = db.items.filter(i => i !== it); db.movs = db.movs.filter(m => m.itemId !== id);
+  persistir(); cerrarModal(); render(); toast('Artículo eliminado');
+}
+function formMov(itemId, tipo = 'Compra', prefill = {}){
+  if (!soloAdmin()) return;
+  const alm = itemId ? db.items.find(i => i.id === itemId).almacen : ui.almacen;
+  const lista = db.items.filter(i => i.almacen === alm);
+  if (!lista.length) return formItem();
+  const eco = calcEconomato();
+  abrirModal({
+    titulo: tipo === 'Compra' ? 'Registrar compra' : tipo === 'Salida' ? 'Registrar salida' : tipo === 'Ajuste' ? 'Conteo físico' : 'Registrar movimiento',
+    sub: 'Compra suma, salida resta y el conteo físico fija el stock a lo que contaste.',
+    campos: [
+      {k:'itemId', l:'Artículo', t:'select', full:1, o: lista.map(i => [i.id, `${i.nombre} — stock actual: ${eco[i.id].movs ? eco[i.id].stock : 'sin registro'}`])},
+      {k:'tipo', l:'Movimiento', t:'select', o:[['Compra','Compra (entra)'],['Salida','Salida / consumo'],['Ajuste','Conteo físico']]},
+      {k:'cantidad', l:'Cantidad', t:'number', min:0, req:1},
+      {k:'fecha', l:'Fecha', t:'date', req:1},
+      {k:'costo', l:'Costo total (S/) — opcional', t:'number', min:0},
+      {k:'por', l:'Registrado por / entregado a'},
+      {k:'obs', l:'Observación', full:1, ph:'Ej. Para controles de la sala de reuniones'},
+    ],
+    valores: {itemId: itemId || lista[0].id, tipo, fecha: hoyISO(), por: usuario?.nombre || '', ...prefill},
+    guardar: d => {
+      const cant = +d.cantidad;
+      if (!(cant >= 0) || (d.tipo !== 'Ajuste' && cant === 0)) return 'Ingresa una cantidad mayor a 0.';
+      const mov = {id:sig(), n:db.seq, itemId:d.itemId, tipo:d.tipo, cantidad:cant, fecha:d.fecha, costo:d.costo, por:d.por, obs:d.obs};
+      db.movs.push(mov);
+      calcEconomato();
+      const negativo = db.movs.find(m => m.itemId === d.itemId && m._stock < 0);
+      if (negativo) { db.movs.pop(); return `No alcanza: con esta salida el stock quedaría en negativo (al ${isoAFecha(negativo.fecha)}). Revisa la cantidad o registra antes la compra.`; }
+      toast('Movimiento registrado');
+    }
+  });
+}
+function eliminarMov(id){
+  if (!soloAdmin()) return;
+  const m = db.movs.find(x => x.id === id);
+  if (!confirm('¿Eliminar este movimiento? El stock se recalculará.')) return;
+  db.movs = db.movs.filter(x => x !== m);
+  calcEconomato();
+  if (db.movs.some(x => x._stock < 0)) { db.movs.push(m); calcEconomato(); return alert('No se puede eliminar: el stock de movimientos posteriores quedaría en negativo.'); }
+  persistir(); render(); toast('Movimiento eliminado');
+}
+
+/* =========================================================
+   COCHERA — espacios con cupos y titulares.
+   Cada espacio está ocupado por sus titulares; si un titular
+   no viene (vacaciones, un día puntual) libera su cupo y otra
+   persona puede reservarlo por mañana, tarde o día completo.
+   ========================================================= */
+const cubre = t => t === 'Día completo' ? ['Mañana','Tarde'] : [t];
+function turnoActual(){ const h = new Date().getHours(); return h < 8 || h >= 19 ? null : h < 13 ? 'Mañana' : 'Tarde'; }
+const espaciosActivos = () => db.espacios.filter(e => e.activo !== false);
+const espacioDe = id => db.espacios.find(e => e.id === id);
+const resActivas = () => db.reservas.filter(r => r.estado === 'Activa');
+const libActivas = () => db.liberaciones.filter(l => l.estado === 'Activa');
+const titularesDe = e => Array.isArray(e?.titulares) ? e.titulares : [];
+const cuposDe = e => Math.max(1, Math.round(+e.cupos || 1));
+const esMia = r => !!usuario && ((r.email && r.email === usuario.email) || (!r.email && norm(r.nombre) === norm(usuario.nombre)));
+const nombreCoincide = (a, b) => { const x = norm(a).split(' ').filter(Boolean), y = norm(b).split(' ').filter(Boolean); return x.length > 0 && x.every(w => y.includes(w)); };
+/* ¿El titular t es la persona u? Por correo si ambos lo tienen; si no, por nombre ("Claudia" = "Claudia Camarena") */
+function coincide(t, u){
+  if (!u) return false;
+  if (t.email && u.email) return t.email.toLowerCase() === u.email.toLowerCase();
+  return nombreCoincide(t.nombre, u.nombre);
+}
+const miTitularidad = e => usuario ? titularesDe(e).find(t => coincide(t, usuario)) : null;
+const libDe = (e, t, fecha, sinLib) => libActivas().find(l => l.id !== sinLib && l.espacioId === e.id && norm(l.titular) === norm(t.nombre) && l.desde <= fecha && fecha <= l.hasta);
+function estadoEspacio(e, fecha, turno, sinLib){
+  const cupos = cuposDe(e), tit = titularesDe(e);
+  const presentes = tit.filter(t => !libDe(e, t, fecha, sinLib)), ausentes = tit.filter(t => libDe(e, t, fecha, sinLib));
+  const ocupTit = Math.min(cupos, presentes.length);
+  const reservas = resActivas().filter(r => r.espacioId === e.id && r.fecha === fecha && cubre(r.turno).includes(turno));
+  const sobra = cupos - ocupTit - reservas.length;
+  return {cupos, presentes, ausentes, ocupTit, reservas, sobra, libres: Math.max(0, sobra)};
+}
+/* Cochera de la que una persona es titular y que no liberó ese día */
+const espacioAsignadoA = (u, fecha) => espaciosActivos().find(e => titularesDe(e).some(t => coincide(t, u) && !libDe(e, t, fecha)));
+function cocheraHoy(){
+  const t = turnoActual() || 'Mañana', E = espaciosActivos();
+  return {total: E.reduce((s, e) => s + cuposDe(e), 0), libres: E.reduce((s, e) => s + estadoEspacio(e, hoyISO(), t).libres, 0), turno: turnoActual()};
+}
+function sumarDias(iso, n){ const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); }
+function moverDia(n){ ui.cochFecha = sumarDias(ui.cochFecha || hoyISO(), n); render(); }
+const nombreDia = (iso, opts = {weekday:'long', day:'numeric', month:'long'}) => new Date(iso + 'T12:00:00').toLocaleDateString('es-PE', opts);
+const titularesATexto = l => (l || []).map(t => t.email ? `${t.nombre} <${t.email}>` : t.nombre).join('; ');
+function textoATitulares(s){
+  return String(s || '').split(/[;\n\/]/).map(x => x.trim()).filter(Boolean).map(x => {
+    const m = x.match(/^(.*?)\s*<\s*([^>]+?)\s*>\s*$/);
+    return m ? {nombre: m[1].trim(), email: m[2].toLowerCase()} : {nombre: x, email: ''};
+  }).filter(t => t.nombre);
+}
+
+function renderCochera(){
+  ui.cochFecha ||= hoyISO();
+  const F = ui.cochFecha, hoy = hoyISO(), esHoy = F === hoy, ahora = esHoy ? turnoActual() : null;
+  const E = espaciosActivos(), admin = esAdmin(), pasado = F < hoy;
+  $('#f-coch-fecha').value = F;
+  $('#coch-dia-txt').textContent = (esHoy ? 'Hoy, ' : '') + nombreDia(F);
+  $('#c-coch').textContent = cocheraHoy().libres;
+
+  const libres = t => E.reduce((s, e) => s + estadoEspacio(e, F, t).libres, 0);
+  const cupos = E.reduce((s, e) => s + cuposDe(e), 0);
+  const ausentesDia = E.reduce((s, e) => s + estadoEspacio(e, F, 'Mañana').ausentes.length, 0);
+  const mias = resActivas().filter(r => esMia(r) && r.fecha >= hoy).sort((a,b) => a.fecha.localeCompare(b.fecha));
+  const miEsp = usuario && espaciosActivos().find(e => miTitularidad(e));
+  $('#btn-liberar-top').style.display = admin || miEsp ? '' : 'none';
+  $('#btn-liberar-top').textContent = admin ? 'Registrar ausencia' : 'No vendré · liberar';
+  $('#kpis-coch').innerHTML =
+    kpi('Cupos', cupos, `${E.length} cocheras${db.espacios.length > E.length ? ` · ${db.espacios.length - E.length} fuera de servicio` : ''}`) +
+    kpi('Libres en la mañana', libres('Mañana'), TURNOS['Mañana'], libres('Mañana') ? 'green' : '') +
+    kpi('Libres en la tarde', libres('Tarde'), TURNOS['Tarde'], libres('Tarde') ? 'green' : '') +
+    kpi('Titulares que no vienen', ausentesDia, 'liberaron su cupo este día') +
+    (miEsp ? kpi('Mi cochera', miEsp.codigo, libDe(miEsp, miTitularidad(miEsp), F) ? 'la liberaste este día' : 'eres titular')
+           : kpi('Mis reservas', mias.length, mias.length ? 'próxima: ' + nombreDia(mias[0].fecha, {weekday:'short', day:'numeric', month:'short'}) : 'sin reservas próximas'));
+
+  $('#coch-espacios').innerHTML = db.espacios.length ? db.espacios.filter(e => admin || e.activo !== false).map(e => {
+    const inactivo = e.activo === false;
+    const filas = Object.keys(TURNOS).map(t => {
+      let chips;
+      if (inactivo) chips = '<span class="tag t-gray">Fuera de servicio</span>';
+      else {
+        const st = estadoEspacio(e, F, t), c = [];
+        if (st.ocupTit) {
+          if (st.presentes.length > st.cupos) c.push(`<span class="chip-c tit" title="Titulares que se turnan el cupo">${esc(st.presentes.map(x => x.nombre).join(' / '))}</span>`);
+          else st.presentes.forEach(x => c.push(`<span class="chip-c tit" title="Titular">${esc(x.nombre)}</span>`));
+        }
+        st.reservas.forEach(r => c.push(`<span class="chip-c res" title="Reserva">${esc(r.nombre)}${r.placa ? ' · ' + esc(r.placa) : ''}${!pasado && (admin || esMia(r))
+          ? ` <button class="x" aria-label="Cancelar reserva" title="${esHoy && cubre(r.turno).includes(turnoActual()) ? 'Liberar' : 'Cancelar'}" onclick="liberarReserva('${r.id}')">✕</button>` : ''}</span>`));
+        for (let i = 0; i < st.libres; i++) c.push(pasado ? '<span class="chip-c lib">Libre</span>' : `<button class="chip-c lib" onclick="formReserva('${e.id}','${t}')">Libre · Reservar</button>`);
+        chips = c.join('');
+      }
+      return `<div class="esp-turno ${ahora === t ? 'ahora' : ''}"><span class="t">${t}${ahora === t ? ' · ahora' : ''}</span><div class="chips-c">${chips}</div></div>`;
+    }).join('');
+    const tit = titularesDe(e);
+    const yo = miTitularidad(e), yoLibero = yo && libDe(e, yo, F);
+    const lineaTit = tit.length ? tit.map(t => { const l = libDe(e, t, F);
+      return `<span>${esc(t.nombre)}${l ? ` <span class="tag t-warn" title="${esc(l.motivo || '')} · ${isoAFecha(l.desde)} – ${isoAFecha(l.hasta)}">no viene</span>${!pasado && (admin || coincide(t, usuario)) ? ` <button class="link" onclick="cancelarLiberacion('${l.id}')">deshacer</button>` : ''}` : ''}</span>`; }).join('<span>·</span>') : '<span>Sin titular: se reserva libremente</span>';
+    const puedeLiberar = !pasado && !inactivo && tit.length && (admin || (yo && !yoLibero));
+    return `<div class="esp ${inactivo ? 'inactivo' : ''}">
+      <div class="esp-top"><div><h3>${esc(e.codigo)} ${cuposDe(e) > 1 ? `<span class="tag t-blue" style="vertical-align:middle">${cuposDe(e)} cupos</span>` : ''}</h3>
+        <small>${esc([e.ubicacion, e.tipo].filter(Boolean).join(' · '))}${e.obs ? ' · ' + esc(e.obs) : ''}</small></div>
+        ${admin ? `<button class="link" onclick="formEspacio('${e.id}')">editar</button>` : ''}</div>
+      ${filas}
+      <div class="esp-tit"><b>Titulares:</b> ${lineaTit}
+        ${puedeLiberar ? `<button class="btn sm" style="margin-left:auto" onclick="formLiberacion('${e.id}')">${admin ? 'Registrar ausencia' : 'No vendré · liberar'}</button>` : ''}</div>
+    </div>`;
+  }).join('') : `<p class="muted">No hay cocheras registradas.${admin ? ' Usa “+ Agregar cochera”.' : ''}</p>`;
+
+  // Próximos 7 días
+  const dias = Array.from({length:7}, (_, i) => sumarDias(hoy, i));
+  const dot = (e, d, t) => { const st = estadoEspacio(e, d, t), L = t[0];
+    if (st.libres) return `<span class="dot l" title="${t}: ${st.libres} libre${st.libres > 1 ? 's' : ''}">${L}${st.cupos > 1 ? st.libres : ''}</span>`;
+    return st.reservas.length ? `<span class="dot r" title="${t}: ${esc(st.reservas.map(r => r.nombre).join(', '))}">${L}</span>`
+                              : `<span class="dot f" title="${t}: titulares">${L}</span>`; };
+  $('#coch-semana').innerHTML = E.length ? `<thead><tr><th>Cochera</th>${dias.map(d => `<th class="${d === F ? 'sel' : ''}"><button onclick="ui.cochFecha='${d}';render()">${d === hoy ? 'Hoy' : nombreDia(d, {weekday:'short', day:'numeric'})}</button></th>`).join('')}</tr></thead>
+    <tbody>${E.map(e => `<tr><td><b>${esc(e.codigo)}</b></td>${dias.map(d => `<td>${dot(e,d,'Mañana')}${dot(e,d,'Tarde')}</td>`).join('')}</tr>`).join('')}
+    <tr><td class="muted">Libres M / T</td>${dias.map(d => `<td class="muted">${E.reduce((s,e) => s + estadoEspacio(e,d,'Mañana').libres, 0)} / ${E.reduce((s,e) => s + estadoEspacio(e,d,'Tarde').libres, 0)}</td>`).join('')}</tr></tbody>`
+    : '<tbody><tr><td class="empty">Sin cocheras.</td></tr></tbody>';
+
+  // Ausencias de titulares
+  const aus = libActivas().filter(l => l.hasta >= hoy && (admin || (() => { const e = espacioDe(l.espacioId), t = titularesDe(e).find(x => norm(x.nombre) === norm(l.titular)); return (t && coincide(t, usuario)) || (l.email && l.email === usuario?.email); })()))
+    .sort((a,b) => a.desde.localeCompare(b.desde));
+  $('#tb-ausencias').innerHTML = aus.length ? aus.map(l => `<tr>
+    <td><b>${esc(espacioDe(l.espacioId)?.codigo || '—')}</b></td><td>${esc(l.titular)}</td><td>${isoAFecha(l.desde)}</td><td>${isoAFecha(l.hasta)}</td><td>${v(l.motivo)}</td>
+    <td><button class="btn sm" onclick="cancelarLiberacion('${l.id}')">Deshacer</button></td></tr>`).join('')
+    : `<tr><td colspan="6" class="empty">${admin ? 'Ningún titular ha liberado su cochera próximamente.' : miEsp ? 'No tienes ausencias registradas. Si no vendrás algún día, usa “No vendré · liberar” en tu cochera.' : 'No aplica: no eres titular de ninguna cochera.'}</td></tr>`;
+
+  // Reservas
+  $('#coch-res-titulo').textContent = admin ? 'Próximas reservas' : 'Mis reservas';
+  $('#coch-res-hint').textContent = admin ? 'Todas las reservas activas desde hoy. El historial completo está en el Excel de esta sección.'
+    : `Puedes reservar un cupo libre hasta ${DIAS_ANTICIPACION} días adelante. Si ya no lo usarás, cancélalo para que otro lo use.`;
+  const lista = db.reservas.filter(r => admin ? (r.estado === 'Activa' && r.fecha >= hoy) : (esMia(r) && r.fecha >= sumarDias(hoy, -7)))
+    .sort((a,b) => a.fecha.localeCompare(b.fecha) || TIPOS_RESERVA.indexOf(a.turno) - TIPOS_RESERVA.indexOf(b.turno));
+  const CLS = {Activa:'t-blue', Cancelada:'t-gray', Liberada:'t-ok'};
+  $('#tb-reservas').innerHTML = lista.length ? lista.map(r => `<tr>
+    <td>${nombreDia(r.fecha, {weekday:'short', day:'2-digit', month:'2-digit', year:'numeric'})}</td><td>${esc(r.turno)}</td>
+    <td><b>${esc(espacioDe(r.espacioId)?.codigo || '—')}</b></td><td>${esc(r.nombre)}${r.email ? `<br><small class="muted">${esc(r.email)}</small>` : ''}</td>
+    <td>${v(r.placa)}</td><td><span class="tag ${CLS[r.estado] || 't-gray'}">${esc(r.estado)}</span></td>
+    <td>${r.estado === 'Activa' && r.fecha >= hoy && (admin || esMia(r)) ? `<button class="btn sm" onclick="liberarReserva('${r.id}')">${r.fecha === hoy && cubre(r.turno).includes(turnoActual()) ? 'Liberar' : 'Cancelar'}</button>` : ''}</td></tr>`).join('')
+    : `<tr><td colspan="7" class="empty">${admin ? 'No hay reservas próximas.' : 'No tienes reservas. Cuando haya un cupo libre, pulsa “Libre · Reservar”.'}</td></tr>`;
+}
+
+function formReserva(espacioId, turno){
+  const E = espaciosActivos();
+  if (!E.length) return toast('No hay cocheras disponibles');
+  const admin = esAdmin(), hoy = hoyISO();
+  const fecha = ui.cochFecha && ui.cochFecha >= hoy ? ui.cochFecha : hoy;
+  abrirModal({
+    titulo: 'Reservar cochera',
+    sub: `Solo se pueden reservar cupos libres (cuando los titulares no vienen o el espacio no tiene titular). Mañana: ${TURNOS['Mañana']} · Tarde: ${TURNOS['Tarde']}.`,
+    campos: [
+      {k:'espacioId', l:'Cochera', t:'select', o:E.map(e => [e.id, `${e.codigo}${e.ubicacion ? ' — ' + e.ubicacion : ''}${cuposDe(e) > 1 ? ' (' + cuposDe(e) + ' cupos)' : ''}`])},
+      {k:'fecha', l:'Fecha', t:'date', req:1},
+      {k:'turno', l:'Turno', t:'select', o:TIPOS_RESERVA},
+      {k:'placa', l:'Placa del vehículo', ph:'Ej. ABC-123'},
+      {k:'nombre', l:'A nombre de', req:1, list:'dl-personas', ro:!admin},
+      {k:'obs', l:'Comentario', full:1, ph:'Ej. Visita de cliente'},
+    ],
+    valores: {espacioId: espacioId || E[0].id, fecha, turno: turno || 'Día completo', nombre: usuario?.nombre || '', placa: usuario?.placa || ''},
+    guardar: d => {
+      if (!d.fecha || d.fecha < hoy) return 'La fecha no puede ser anterior a hoy.';
+      if (!admin && d.fecha > sumarDias(hoy, DIAS_ANTICIPACION)) return `Solo puedes reservar hasta ${DIAS_ANTICIPACION} días adelante.`;
+      if (d.fecha === hoy && d.turno === 'Mañana' && new Date().getHours() >= 13) return 'El turno de la mañana de hoy ya terminó.';
+      const e = espacioDe(d.espacioId), turnos = cubre(d.turno);
+      const lleno = turnos.find(t => !estadoEspacio(e, d.fecha, t).libres);
+      if (lleno) { const st = estadoEspacio(e, d.fecha, lleno);
+        return `${e.codigo} no tiene cupo libre ${d.turno === 'Día completo' ? 'ese día' : 'en ese turno'}${st.ocupTit && !st.reservas.length ? ' (lo usan sus titulares)' : ''}. Revisa en las tarjetas qué cupos están libres.`; }
+      const nombre = admin ? d.nombre : usuario.nombre, email = admin && norm(d.nombre) !== norm(usuario.nombre) ? '' : usuario.email;
+      const persona = {nombre, email};
+      const asig = espacioAsignadoA(persona, d.fecha);
+      if (asig) return `${admin && !email ? nombre + ' ya tiene' : 'Ya tienes'} asignada la cochera ${asig.codigo} ese día. ${asig === e ? '' : 'Si no la usará, primero hay que liberarla.'}`.trim();
+      const quien = r => (email && r.email === email) || norm(r.nombre) === norm(nombre);
+      const doble = resActivas().find(r => r.fecha === d.fecha && quien(r) && cubre(r.turno).some(t => turnos.includes(t)));
+      if (doble) return `${admin && !email ? nombre + ' ya tiene' : 'Ya tienes'} la cochera ${espacioDe(doble.espacioId)?.codigo} reservada ese ${doble.turno === 'Día completo' ? 'día' : 'turno'}.`;
+      if (!admin && d.placa) { usuario.placa = d.placa.toUpperCase(); try { localStorage.setItem(SKEY, JSON.stringify(usuario)); } catch(err){} }
+      ui.cochFecha = d.fecha;
+      const msg = `${e.codigo} reservado · ${nombreDia(d.fecha, {weekday:'short', day:'numeric', month:'short'})} · ${d.turno.toLowerCase()}`;
+      if (REMOTO) {   // el servidor vuelve a validar, por si alguien reservó en ese mismo momento
+        api('reservar', {reserva:{espacioId:e.id, fecha:d.fecha, turno:d.turno, placa:d.placa, nombre, obs:d.obs}})
+          .then(j => { agregarDelServidor('reservas', j.reserva); toast(msg); })
+          .catch(err => { alert(err.message); recargar(); });
+        return;
+      }
+      db.reservas.push({id:sig(), espacioId:e.id, fecha:d.fecha, turno:d.turno, nombre, email, placa:d.placa.toUpperCase(), obs:d.obs,
+        estado:'Activa', creada:new Date().toLocaleString('es-PE'), creadaPor:usuario?.email || ''});
+      toast(msg);
+    }
+  });
+}
+function liberarReserva(id){
+  const r = db.reservas.find(x => x.id === id);
+  if (!r || !(esAdmin() || esMia(r))) return toast('Solo puedes cambiar tus propias reservas');
+  const enCurso = r.fecha === hoyISO() && cubre(r.turno).includes(turnoActual());
+  const cod = espacioDe(r.espacioId)?.codigo || '';
+  if (!confirm(enCurso ? `¿Liberar el cupo de ${cod} ahora? Quedará libre para otra persona.` : `¿Cancelar la reserva de ${cod} del ${isoAFecha(r.fecha)} (${r.turno.toLowerCase()})?`)) return;
+  if (REMOTO) {
+    api('liberarReserva', {id})
+      .then(j => { agregarDelServidor('reservas', j.reserva); toast(j.reserva.estado === 'Liberada' ? `${cod} liberado` : 'Reserva cancelada'); })
+      .catch(e => { alert(e.message); recargar(); });
+    return;
+  }
+  r.estado = enCurso ? 'Liberada' : 'Cancelada';
+  r.cerrada = new Date().toLocaleString('es-PE'); r.cerradaPor = usuario?.email || '';
+  persistir(); render(); toast(enCurso ? `${cod} liberado` : 'Reserva cancelada');
+}
+
+/* ---------- Ausencias de titulares (liberar el cupo) ---------- */
+function formLiberacion(espacioId){
+  const admin = esAdmin();
+  const E = espaciosActivos().filter(e => titularesDe(e).length && (admin || miTitularidad(e)));
+  if (!E.length) return toast('No eres titular de ninguna cochera');
+  const e0 = E.find(e => e.id === espacioId) || E[0];
+  const opciones = e => (admin ? titularesDe(e) : [miTitularidad(e)]).filter(Boolean).map(t => [t.nombre, t.nombre]);
+  const F = ui.cochFecha && ui.cochFecha >= hoyISO() ? ui.cochFecha : hoyISO();
+  abrirModal({
+    titulo: admin ? 'Registrar ausencia de titular' : 'Liberar mi cochera',
+    sub: 'En esas fechas el cupo queda libre para que otra persona lo reserve. Si al final sí vienes, puedes deshacerlo mientras nadie lo haya reservado.',
+    campos: [
+      {k:'espacioId', l:'Cochera', t:'select', o:E.map(e => [e.id, `${e.codigo}${e.ubicacion ? ' — ' + e.ubicacion : ''}`])},
+      {k:'titular', l:'Titular', t:'select', o:opciones(e0)},
+      {k:'desde', l:'Desde', t:'date', req:1},
+      {k:'hasta', l:'Hasta (inclusive)', t:'date', req:1},
+      {k:'motivo', l:'Motivo', t:'select', o:['No vendrá','Vacaciones','Trabajo fuera de oficina','Otro']},
+      {k:'obs', l:'Comentario (opcional)', full:1},
+    ],
+    valores: {espacioId:e0.id, desde:F, hasta:F, motivo:'No vendrá'},
+    guardar: d => {
+      const e = espacioDe(d.espacioId), t = titularesDe(e).find(x => x.nombre === d.titular);
+      if (!t) return 'Elige el titular.';
+      if (!admin && !coincide(t, usuario)) return 'Solo puedes liberar tu propio cupo.';
+      if (!d.desde || !d.hasta || d.hasta < d.desde) return 'Revisa las fechas: “hasta” no puede ser anterior a “desde”.';
+      if (!admin && d.desde < hoyISO()) return 'No puedes liberar fechas pasadas.';
+      if (d.hasta > sumarDias(d.desde, 90)) return 'Máximo 90 días por registro.';
+      if (libActivas().some(l => l.espacioId === e.id && norm(l.titular) === norm(t.nombre) && !(l.hasta < d.desde || l.desde > d.hasta)))
+        return 'Ya hay una ausencia registrada que se cruza con esas fechas.';
+      const lib = {espacioId:e.id, titular:t.nombre, desde:d.desde, hasta:d.hasta, motivo:d.motivo, obs:d.obs};
+      const msg = `${e.codigo}: cupo de ${t.nombre} liberado ${d.desde === d.hasta ? 'el ' + isoAFecha(d.desde) : `del ${isoAFecha(d.desde)} al ${isoAFecha(d.hasta)}`}`;
+      if (REMOTO) {
+        api('liberarCochera', {liberacion:lib}).then(j => { agregarDelServidor('liberaciones', j.liberacion); toast(msg); }).catch(err => alert(err.message));
+        return;
+      }
+      db.liberaciones.push({id:sig(), ...lib, email: t.email || (coincide(t, usuario) ? usuario.email : ''), estado:'Activa', creada:new Date().toLocaleString('es-PE'), creadaPor:usuario?.email || ''});
+      toast(msg);
+    }
+  });
+  $('#m_espacioId').addEventListener('change', ev => {
+    $('#m_titular').innerHTML = opciones(espacioDe(ev.target.value)).map(([a]) => `<option>${esc(a)}</option>`).join('');
+  });
+}
+function cancelarLiberacion(id){
+  const l = db.liberaciones.find(x => x.id === id); if (!l) return;
+  const e = espacioDe(l.espacioId), t = titularesDe(e).find(x => norm(x.nombre) === norm(l.titular));
+  if (!(esAdmin() || (t && coincide(t, usuario)) || (l.email && l.email === usuario?.email))) return toast('Solo el titular o contabilidad pueden deshacerlo');
+  const hoy = hoyISO();
+  const choque = resActivas().find(r => r.espacioId === l.espacioId && r.fecha >= l.desde && r.fecha <= l.hasta && r.fecha >= hoy
+    && cubre(r.turno).some(tu => estadoEspacio(e, r.fecha, tu, l.id).sobra < 0));
+  if (choque) return alert(`No se puede deshacer: ${choque.nombre} ya reservó la cochera ${e.codigo} el ${isoAFecha(choque.fecha)}.\n\nPídele que cancele su reserva o coordínalo con contabilidad.`);
+  if (!confirm(`¿Deshacer la ausencia de ${l.titular} (${isoAFecha(l.desde)} – ${isoAFecha(l.hasta)})?\n\nLa cochera ${e?.codigo} vuelve a quedar para su titular.`)) return;
+  if (REMOTO) {
+    api('cancelarLiberacion', {id}).then(j => { agregarDelServidor('liberaciones', j.liberacion); toast('Ausencia deshecha'); }).catch(err => { alert(err.message); recargar(); });
+    return;
+  }
+  l.estado = 'Cancelada';
+  persistir(); render(); toast('Ausencia deshecha');
+}
+
+/* ---------- Cocheras (solo contabilidad) ---------- */
+function formEspacio(id){
+  if (!soloAdmin()) return;
+  const e = id ? espacioDe(id) : null;
+  abrirModal({
+    titulo: e ? `Editar cochera ${e.codigo}` : 'Agregar cochera',
+    sub: 'Los titulares ocupan la cochera por defecto; cuando no vienen, liberan su cupo. Sin titulares, cualquiera puede reservarla.',
+    campos: [
+      {k:'codigo', l:'Número / código', req:1, ph:'Ej. 70'},
+      {k:'ubicacion', l:'Ubicación', ph:'Ej. Sótano 3'},
+      {k:'cupos', l:'Cupos (autos que entran)', t:'select', o:[['1','1 (simple)'],['2','2 (doble)'],['3','3'],['4','4']]},
+      {k:'tipo', l:'Tipo', t:'select', o:['Auto','Moto','Auto o moto','Bicicleta']},
+      {k:'titulares', l:'Titulares — uno por línea. Opcional: correo entre < >', t:'textarea', full:1, ph:'Claudia Camarena <ccamarena@ttaudit.com>\nDaniela Olaguibel'},
+      {k:'activo', l:'Estado', t:'select', o:[['si','En servicio'],['no','Fuera de servicio']]},
+      {k:'obs', l:'Observaciones', ph:'Ej. Se turnan'},
+    ],
+    valores: e ? {...e, cupos:String(cuposDe(e)), titulares:titularesDe(e).map(t => t.email ? `${t.nombre} <${t.email}>` : t.nombre).join('\n'), activo: e.activo === false ? 'no' : 'si'} : {cupos:'1', tipo:'Auto', activo:'si'},
+    extra: e ? `<div class="full" style="text-align:right"><button type="button" class="btn sm danger" onclick="eliminarEspacio('${e.id}')">Eliminar cochera</button></div>` : '',
+    guardar: d => {
+      if (db.espacios.some(x => norm(x.codigo) === norm(d.codigo) && x !== e)) return `Ya existe la cochera ${d.codigo}.`;
+      const reg = {codigo:d.codigo.toUpperCase(), ubicacion:d.ubicacion, tipo:d.tipo, cupos:+d.cupos || 1, titulares:textoATitulares(d.titulares), activo:d.activo !== 'no', obs:d.obs};
+      if (e) {
+        // si se completó el nombre o se agregó el correo de un titular, sus ausencias siguen siendo suyas
+        const mismo = (a, b) => (a.email && b.email && a.email === b.email) || nombreCoincide(a.nombre, b.nombre) || nombreCoincide(b.nombre, a.nombre);
+        const renombres = [];
+        db.liberaciones.filter(l => l.espacioId === e.id).forEach(l => {
+          const viejo = titularesDe(e).find(t => norm(t.nombre) === norm(l.titular)) || {nombre:l.titular, email:l.email};
+          const nuevo = reg.titulares.find(t => mismo(viejo, t));
+          if (nuevo && nuevo.nombre !== l.titular) { renombres.push([l, l.titular, l.email]); l.titular = nuevo.nombre; if (nuevo.email) l.email = nuevo.email; }
+        });
+        const deshacer = () => renombres.forEach(([l, n, m]) => { l.titular = n; l.email = m; });
+        // reservas futuras que ya no entrarían con la nueva configuración
+        const prueba = {...e, ...reg}, hoy = hoyISO();
+        const sobran = resActivas().filter(r => r.espacioId === e.id && r.fecha >= hoy &&
+          (!reg.activo || cubre(r.turno).some(t => estadoEspacio(prueba, r.fecha, t).sobra < 0)));
+        if (sobran.length && !confirm(`Con este cambio ${sobran.length} reserva(s) próximas de ${e.codigo} ya no tendrían cupo. ¿Cancelarlas?`)) { deshacer(); return 'No se guardó.'; }
+        sobran.forEach(r => { r.estado = 'Cancelada'; r.cerrada = new Date().toLocaleString('es-PE'); r.cerradaPor = usuario?.email || ''; });
+        Object.assign(e, reg);
+      } else db.espacios.push({id:sig(), ...reg});
+      toast('Cochera guardada');
+    }
+  });
+}
+function eliminarEspacio(id){
+  if (!soloAdmin()) return;
+  const e = espacioDe(id), fut = resActivas().filter(r => r.espacioId === id && r.fecha >= hoyISO()).length;
+  if (!confirm(`¿Eliminar la cochera ${e.codigo}?${fut ? ` Se cancelarán ${fut} reservas próximas.` : ''}`)) return;
+  db.reservas.filter(r => r.espacioId === id && r.estado === 'Activa').forEach(r => r.estado = 'Cancelada');
+  db.liberaciones.filter(l => l.espacioId === id && l.estado === 'Activa').forEach(l => l.estado = 'Cancelada');
+  db.espacios = db.espacios.filter(x => x !== e);
+  persistir(); cerrarModal(); render(); toast('Cochera eliminada');
+}
+/* Cambia las 4 cocheras de ejemplo de versiones anteriores por las reales */
+function migrarCocherasEjemplo(){
+  const ej = db.espacios.length && db.espacios.every(e => /^E-0[1-4]$/.test(e.codigo) && !e.fijo && !titularesDe(e).length);
+  if (!ej) return false;
+  const viejas = new Set(db.espacios.map(e => e.id));   // las reservas de prueba en esas cocheras se cancelan
+  db.reservas.forEach(r => { if (viejas.has(r.espacioId) && r.estado === 'Activa') r.estado = 'Cancelada'; });
+  db.espacios = ESPACIOS_INICIALES.map(x => ({id: sig(), ...JSON.parse(JSON.stringify(x))}));
+  return true;
+}
+
+/* =========================================================
+   SOLICITUDES / TICKETS
+   ========================================================= */
+const tkAbierto = t => ['Pendiente','En evaluación','Aprobada'].includes(t.estado);
+const misTickets = () => esAdmin() ? db.tickets : db.tickets.filter(t => t.solicitanteEmail && t.solicitanteEmail === usuario?.email);
+let tkAbiertoId = null;
+const CLS_TK   = {'Pendiente':'t-blue','En evaluación':'t-warn','Aprobada':'t-ok','Atendida':'t-gray','Rechazada':'t-bad'};
+const CLS_PRIO = {'Baja':'t-gray','Media':'t-blue','Alta':'t-warn','Urgente':'t-bad'};
+const tagTk   = e => `<span class="tag ${CLS_TK[e] || 't-gray'}">${esc(e)}</span>`;
+const tagPrio = p => `<span class="tag ${CLS_PRIO[p] || 't-gray'}">${esc(p)}</span>`;
+const itemDe = id => db.items.find(i => i.id === id);
+const nombreLinea = l => l.itemId ? (itemDe(l.itemId)?.nombre || '(artículo eliminado)') : (l.nombre || 'Otro');
+
+function evaluarLinea(l, eco){
+  const it = l.itemId && itemDe(l.itemId);
+  if (!it) return {ok:false, falta:+l.cantidad, txt:'No está en inventario', cls:'t-warn'};
+  const r = eco[it.id];
+  if (!r.movs) return {ok:false, falta:+l.cantidad, txt:'Sin conteo de stock', cls:'t-gray'};
+  return r.stock >= +l.cantidad
+    ? {ok:true, falta:0, txt:'Hay stock', cls:'t-ok'}
+    : {ok:false, falta:+l.cantidad - Math.max(0, r.stock), txt:`Faltan ${+l.cantidad - Math.max(0, r.stock)}`, cls:'t-bad'};
+}
+function evaluarTicket(t, eco){
+  return t.lineas.every(l => evaluarLinea(l, eco).ok) ? '<span class="tag t-ok">Hay stock</span>' : '<span class="tag t-bad">Requiere compra</span>';
+}
+
+function renderTickets(eco){
+  $('#tk-titulo').textContent = esAdmin() ? '🎫 Solicitudes de abastecimiento' : '🎫 Mis solicitudes';
+  $('#tk-sub').textContent = esAdmin() ? 'Cada pedido genera un ticket: se evalúa contra el stock, se aprueba y se atiende'
+    : `Pide lo que necesites y sigue su estado. ${CORREO_FINANZAS} recibe el detalle por correo y contabilidad lo atiende.`;
+  const T = misTickets(), mes = hoyISO().slice(0,7), n = e => T.filter(t => t.estado === e).length;
+  const dias = T.filter(t => t.estado === 'Atendida' && t.atendidoEl).map(t => diasEntre(t.fecha, t.atendidoEl));
+  $('#kpis-tk').innerHTML =
+    kpi('Abiertas', T.filter(tkAbierto).length, 'pendientes, en evaluación y aprobadas') +
+    kpi('Pendientes', n('Pendiente'), 'nuevas, sin revisar', n('Pendiente') ? 'red' : '') +
+    kpi('En evaluación', n('En evaluación'), 'revisando stock / compra', 'amber') +
+    kpi('Aprobadas', n('Aprobada'), 'listas para entregar', 'green') +
+    kpi('Atendidas este mes', T.filter(t => t.estado === 'Atendida' && (t.atendidoEl||'').startsWith(mes)).length, 'entregadas') +
+    kpi('Tiempo promedio', dias.length ? (dias.reduce((a,b) => a+b, 0) / dias.length).toFixed(1) + ' días' : '—', 'de la solicitud a la entrega');
+
+  $('#chips-tk').innerHTML = [['abiertas','Abiertas',T.filter(tkAbierto).length], ...ESTADOS_TK.map(e => [e,e,n(e)]), ['todas','Todas',T.length]]
+    .map(([k,t,c]) => `<button class="chip ${ui.chipTk===k?'on':''}" onclick="ui.chipTk='${k}';render()">${t}<small>${c}</small></button>`).join('');
+
+  const q = norm($('#f-tk-q').value), alm = $('#f-tk-alm').value;
+  const lista = T.filter(t =>
+      (ui.chipTk === 'todas' || (ui.chipTk === 'abiertas' ? tkAbierto(t) : t.estado === ui.chipTk)) &&
+      (!alm || t.almacen === alm) &&
+      (!q || norm([t.id, t.solicitante, t.area, t.motivo, t.responsable, ...t.lineas.map(nombreLinea)].join(' ')).includes(q)))
+    .sort((a,b) => (tkAbierto(b) - tkAbierto(a)) || (PRIORIDADES.indexOf(b.prioridad) - PRIORIDADES.indexOf(a.prioridad)) || b.n - a.n);
+  $('#tb-tk').innerHTML = lista.length ? lista.map(t => `<tr>
+    <td><span class="tk-id">${t.id}</span></td><td>${isoAFecha(t.fecha)}</td>
+    <td><b>${esc(t.solicitante)}</b>${t.solicitanteEmail ? `<br><small class="muted">${esc(t.solicitanteEmail)}</small>` : ''}</td><td>${v(t.area)}</td>
+    <td>${t.almacen === 'CC ADM' ? '☕ CC ADM' : '🏢 Oficina'}</td>
+    <td class="wrap">${t.lineas.map(l => `${esc(nombreLinea(l))} ×${esc(l.cantidad)}`).join(', ')}</td>
+    <td>${tagPrio(t.prioridad)}</td><td>${tkAbierto(t) ? evaluarTicket(t, eco) : '<span class="muted">—</span>'}</td><td>${tagTk(t.estado)}</td>
+    <td>${tagCorreo(t)}</td>
+    <td><button class="btn sm" onclick="verTicket('${t.id}')">Ver</button></td></tr>`).join('')
+    : `<tr><td colspan="11" class="empty">${T.length ? 'No hay tickets en este filtro.' : 'Aún no hay solicitudes. Usa “+ Nueva solicitud”.'}</td></tr>`;
+
+  // Evaluación de abastecimiento
+  const filas = db.items.filter(i => !alm || i.almacen === alm).map(i => {
+    const r = eco[i.id], pedido = pedidoAbierto(i.id), stock = r.movs ? Math.max(0, r.stock) : 0, min = +i.minimo || 0;
+    return {i, pedido, stock, min, conteo: r.movs > 0, faltante: Math.max(0, pedido - stock), sugerido: Math.max(0, pedido + min - stock)};
+  }).filter(f => f.pedido > 0 || (f.conteo && f.stock <= f.min));
+  const libres = db.tickets.filter(t => tkAbierto(t) && (!alm || t.almacen === alm))
+    .flatMap(t => t.lineas.map((l,idx) => ({t, l, idx})).filter(x => !x.l.itemId || !itemDe(x.l.itemId)));
+  filas.sort((a,b) => b.sugerido - a.sugerido);
+  $('#tb-eval').innerHTML = (filas.length || libres.length) ? filas.map(f => `<tr>
+      <td><b>${esc(f.i.nombre)}</b> <span class="muted">${esc(f.i.unidad)}</span></td><td>${esc(f.i.almacen)}</td>
+      <td class="num">${f.pedido || '<span class="muted">0</span>'}</td><td class="num">${f.conteo ? f.stock : '<span class="muted">sin conteo</span>'}</td>
+      <td class="num">${f.min}</td><td class="num">${f.faltante ? `<b style="color:var(--bad)">${f.faltante}</b>` : '0'}</td>
+      <td class="num"><b>${f.sugerido}</b></td>
+      <td>${f.sugerido ? `<button class="btn sm ok" onclick="formMov('${f.i.id}','Compra',{cantidad:${f.sugerido}})">Registrar compra</button>` : ''}</td></tr>`).join('') +
+    libres.map(x => `<tr>
+      <td><b>${esc(x.l.nombre || 'Otro')}</b> <span class="tag t-warn">No está en inventario</span></td><td>${esc(x.t.almacen)}</td>
+      <td class="num">${esc(x.l.cantidad)}</td><td class="num muted">—</td><td class="num muted">—</td>
+      <td class="num"><b style="color:var(--bad)">${esc(x.l.cantidad)}</b></td><td class="num"><b>${esc(x.l.cantidad)}</b></td>
+      <td><button class="btn sm" onclick="crearDesdeLinea('${x.t.id}',${x.idx})">Crear artículo</button> <span class="muted">${x.t.id}</span></td></tr>`).join('')
+    : '<tr><td colspan="8" class="empty">No hay nada que comprar: no hay pedidos abiertos sin stock ni artículos bajo el mínimo.</td></tr>';
+}
+
+/* ---------- Nueva solicitud ---------- */
+function opcionesItems(alm, sel){
+  return db.items.filter(i => i.almacen === alm).map(i => `<option value="${i.id}"${i.id === sel ? ' selected' : ''}>${esc(i.nombre)} (${esc(i.unidad)})</option>`).join('')
+    + `<option value="__otro"${sel === '__otro' ? ' selected' : ''}>Otro (no está en la lista)…</option>`;
+}
+function lineaHTML(alm){
+  return `<div class="tk-line">
+    <select class="ln-item" onchange="this.parentNode.classList.toggle('es-otro', this.value === '__otro')">${opcionesItems(alm, '')}</select>
+    <input class="ln-cant" type="number" min="0" step="any" value="1" aria-label="Cantidad">
+    <button type="button" title="Quitar" onclick="quitarLinea(this)">✕</button>
+    <input class="otro ln-otro" placeholder="¿Qué se necesita? Ej. Galletas para reunión">
+  </div>`;
+}
+function quitarLinea(b){ if ($$('#tk-lines-list .tk-line').length > 1) b.parentNode.remove(); }
+function agregarLinea(){ $('#tk-lines-list').insertAdjacentHTML('beforeend', lineaHTML($('#m_almacen').value)); }
+function formTicket(){
+  abrirModal({
+    titulo: 'Nueva solicitud',
+    sub: REMOTO ? `Se generará un ticket y el detalle llegará automáticamente a ${CORREO_FINANZAS}.`
+                : `Se generará un ticket y se abrirá el correo para ${CORREO_FINANZAS} con todo el detalle: solo tienes que pulsar Enviar.`,
+    campos: [
+      {k:'solicitante', l:'Solicitante', req:1, list:'dl-personas', ro: !!usuario},
+      ...(usuario ? [{k:'email', l:'Correo', ro:1}] : []),
+      {k:'area', l:'Área / cuenta', list:'dl-cuentas'},
+      {k:'almacen', l:'¿Qué se pide?', t:'select', o:[['CC ADM','☕ CC ADM — café, azúcar, vasos…'],['Oficina','🏢 Inventario oficina — pilas, útiles…']]},
+      {k:'prioridad', l:'Prioridad', t:'select', o:PRIORIDADES},
+      {k:'requeridoPara', l:'¿Para cuándo?', t:'date'},
+    ],
+    valores: {almacen: ui.almacen, prioridad:'Media', solicitante: usuario?.nombre, email: usuario?.email},
+    extra: `<div class="tk-lines"><label>Artículos solicitados * <span style="font-weight:400">(artículo · cantidad)</span></label>
+        <div id="tk-lines-list" style="display:flex;flex-direction:column;gap:8px">${lineaHTML(ui.almacen)}</div>
+        <div><button type="button" class="btn sm" onclick="agregarLinea()">+ Agregar artículo</button></div></div>
+      <div class="full"><label for="m_motivo">Motivo / comentario</label><textarea id="m_motivo" name="motivo" placeholder="Ej. Reunión con cliente el jueves, 10 personas"></textarea></div>`,
+    guardar: d => {
+      const lineas = [...$$('#tk-lines-list .tk-line')].map(div => {
+        const val = div.querySelector('.ln-item').value;
+        return {itemId: val === '__otro' ? '' : val, nombre: val === '__otro' ? div.querySelector('.ln-otro').value.trim() : '', cantidad: +div.querySelector('.ln-cant').value};
+      });
+      if (lineas.some(l => !(l.cantidad > 0))) return 'Cada artículo necesita una cantidad mayor a 0.';
+      if (lineas.some(l => !l.itemId && !l.nombre)) return 'Describe el artículo marcado como “Otro”.';
+      if (REMOTO) {   // el servidor numera el ticket y envía el correo a finanzas
+        const eco = calcEconomato();
+        const detalle = lineas.map(l => { const it = l.itemId && itemDe(l.itemId);
+          return {nombre:nombreLinea(l), cantidad:l.cantidad, unidad:it ? it.unidad : '', stock:it && eco[it.id].movs ? eco[it.id].stock : '—', evaluacion:evaluarLinea(l, eco).txt}; });
+        toast('Enviando solicitud…');
+        api('crearTicket', {ticket:{area:d.area, almacen:d.almacen, prioridad:d.prioridad, requeridoPara:d.requeridoPara, motivo:d.motivo, lineas}, detalle})
+          .then(j => {
+            agregarDelServidor('tickets', j.ticket);
+            if (j.ticket.correo?.estado === 'enviado') toast(`Solicitud ${j.ticket.id} creada y enviada a finanzas`);
+            else alert(`La solicitud ${j.ticket.id} se creó, pero el correo a finanzas falló (${j.ticket.correo?.error || 'error'}).\n\nÁbrela en “Mis solicitudes” para enviarlo tú.`);
+          })
+          .catch(e => alert('No se pudo enviar la solicitud: ' + e.message));
+        return;
+      }
+      // Número con iniciales de quien solicita, para que no se repita entre personas
+      const ini = norm(usuario?.nombre || d.solicitante).split(' ').map(x => x[0]).slice(0,2).join('').toUpperCase() || 'XX';
+      const t = {id:`TK-${ini}-${String(db.tkSeq++).padStart(4,'0')}`, n:db.seq++, fecha:hoyISO(),
+        solicitante: usuario ? usuario.nombre : d.solicitante, solicitanteEmail: usuario?.email || '', area:d.area,
+        almacen:d.almacen, prioridad:d.prioridad, requeridoPara:d.requeridoPara, motivo:d.motivo, lineas,
+        estado:'Pendiente', responsable:'', atendidoEl:'', movs:[], timeline:[], correo:{estado:'por enviar'}};
+      pasoTk(t, 'Pendiente', t.solicitante, 'Solicitud creada');
+      db.tickets.push(t);
+      enviarAFinanzas(t.id);
+      toast(`Ticket ${t.id} creado · revisa el correo y pulsa Enviar`);
+    }
+  });
+  $('#m_almacen').addEventListener('change', e => $$('#tk-lines-list .tk-line').forEach(div => {
+    div.querySelector('.ln-item').innerHTML = opcionesItems(e.target.value, ''); div.classList.remove('es-otro');
+  }));
+}
+function pasoTk(t, estado, por, nota){
+  if (estado !== 'Comentario') t.estado = estado;
+  t.timeline.push({fecha:new Date().toLocaleString('es-PE'), estado, por:por || '', nota:nota || ''});
+}
+
+/* ---------- Detalle del ticket ---------- */
+const ACCIONES_TK = {
+  'Pendiente':     [['En evaluación','Pasar a evaluación',''],['Rechazada','Rechazar','danger'],['Aprobada','Aprobar','primary']],
+  'En evaluación': [['Rechazada','Rechazar','danger'],['Aprobada','Aprobar','primary']],
+  'Aprobada':      [['Rechazada','Rechazar','danger'],['Atendida','Marcar como atendida','ok']],
+  'Atendida':      [['Pendiente','Reabrir','']],
+  'Rechazada':     [['Pendiente','Reabrir','']],
+};
+function verTicket(id){
+  const t = misTickets().find(x => x.id === id); if (!t) return cerrarTicket();
+  const admin = esAdmin();
+  const mismo = tkAbiertoId === id && $('#overlay-tk').classList.contains('open');
+  const prevResp = mismo ? $('#tk-resp')?.value : null, prevNota = mismo ? $('#tk-nota')?.value : '';
+  tkAbiertoId = id;
+  const eco = calcEconomato(), abierto = tkAbierto(t);
+  const filas = t.lineas.map((l,i) => {
+    const e = evaluarLinea(l, eco), it = l.itemId && itemDe(l.itemId);
+    let btn = '';
+    if (admin && abierto && !e.ok) btn = it
+      ? `<button class="btn sm ok" onclick="formMov('${it.id}','Compra',{cantidad:${e.falta}, obs:'Compra para ${t.id}'})">Registrar compra</button>`
+      : `<button class="btn sm" onclick="crearDesdeLinea('${t.id}',${i})">Crear artículo</button>`;
+    return `<tr><td><b>${esc(nombreLinea(l))}</b>${it ? ` <span class="muted">${esc(it.unidad)}</span>` : ''}</td>
+      <td class="num">${esc(l.cantidad)}</td><td class="num">${it && eco[it.id].movs ? eco[it.id].stock : '<span class="muted">—</span>'}</td>
+      <td>${abierto ? `<span class="tag ${e.cls}">${e.txt}</span>` : '<span class="muted">—</span>'}</td><td>${btn}</td></tr>`;
+  }).join('');
+  const dias = t.estado === 'Rechazada' ? '—' : diasEntre(t.fecha, t.atendidoEl || hoyISO()) + ' días';
+  $('#tk-detalle').innerHTML = `
+    <div class="card-head" style="margin:0">
+      <div><h3><span class="tk-id">${t.id}</span> · ${esc(t.solicitante)}</h3><p class="sub" style="margin:2px 0 0">${ALMACENES[t.almacen].titulo}</p></div>
+      <div style="display:flex;gap:6px">${tagPrio(t.prioridad)} ${tagTk(t.estado)}</div>
+    </div>
+    <div class="tk-info">
+      <div><span>Fecha de solicitud</span><b>${isoAFecha(t.fecha)}</b></div>
+      <div><span>Para cuándo</span><b>${isoAFecha(t.requeridoPara)}</b></div>
+      <div><span>Área / cuenta</span><b>${v(t.area)}</b></div>
+      <div><span>Responsable</span><b>${v(t.responsable)}</b></div>
+      <div><span>Atendida el</span><b>${isoAFecha(t.atendidoEl)}</b></div>
+      <div><span>${t.atendidoEl ? 'Tiempo de atención' : 'Días abierta'}</span><b>${dias}</b></div>
+    </div>
+    ${t.motivo ? `<div class="tk-box">${esc(t.motivo)}</div>` : ''}
+    <div class="tk-box" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <span>Correo a finanzas:</span> ${tagCorreo(t)}
+      <span class="muted" style="flex:1">${
+        t.correo?.estado === 'enviado' ? (REMOTO && !t.correo.app ? `Enviado automáticamente a ${esc(t.correo.para || CORREO_FINANZAS)} el ${esc(t.correo.fecha)}.` : `Se abrió listo para enviar el ${esc(t.correo.fecha)}. Si lo cerraste sin enviar, ábrelo otra vez.`)
+        : t.correo?.estado === 'error' ? `No se pudo enviar automáticamente (${esc(t.correo.error || 'error')}). Envíalo tú:`
+        : 'Aún no se ha enviado.'}</span>
+      ${!REMOTO || t.correo?.estado !== 'enviado' || t.correo.app ? `<button class="btn sm" onclick="enviarAFinanzas('${t.id}','gmail')">Abrir en Gmail</button>
+      <button class="btn sm" onclick="enviarAFinanzas('${t.id}','mailto')">Abrir en Outlook / app</button>` : ''}
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Artículo</th><th class="num">Pedido</th><th class="num">Stock</th><th>Evaluación</th><th></th></tr></thead>
+      <tbody>${filas}</tbody></table></div>
+    ${admin ? `<div class="grid" style="margin-top:14px">
+      <div><label for="tk-resp">Responsable</label><input id="tk-resp" value="${esc(prevResp ?? (t.responsable || (tkAbierto(t) && usuario ? usuario.nombre : '')))}" placeholder="Quién atiende" list="dl-personas"></div>
+      <div><label for="tk-nota">Comentario</label><input id="tk-nota" value="${esc(prevNota)}" placeholder="Ej. Se compra con caja chica el lunes"></div>
+      ${t.estado === 'Aprobada' ? `<div class="full"><label class="check"><input type="checkbox" id="tk-descontar" checked style="width:auto"> Al marcar como atendida, descontar lo entregado del stock de ${t.almacen === 'CC ADM' ? 'CC ADM' : 'oficina'}</label></div>` : ''}
+    </div>
+    <div class="err" id="tk-err"></div>` : `<p class="hint" style="margin:14px 0 0">Contabilidad revisará tu solicitud. Aquí verás cada cambio de estado.</p>`}
+    <div class="tk-actions">
+      <button class="btn" onclick="cerrarTicket()">Cerrar</button>
+      ${admin ? `<button class="btn" onclick="comentarTk('${t.id}')">Solo comentar</button>
+      ${ACCIONES_TK[t.estado].map(([e,txt,cls]) => `<button class="btn ${cls}" onclick="moverTk('${t.id}','${e}')">${txt}</button>`).join('')}` : ''}
+    </div>
+    <h3 style="font-size:14px;margin-top:18px">Seguimiento</h3>
+    <ul class="timeline">${t.timeline.slice().reverse().map(p => `<li><b>${esc(p.estado)}</b>${p.nota ? ' — ' + esc(p.nota) : ''}<br><small>${esc(p.fecha)}${p.por ? ' · ' + esc(p.por) : ''}</small></li>`).join('')}</ul>`;
+  $('#overlay-tk').classList.add('open');
+}
+function cerrarTicket(){ $('#overlay-tk').classList.remove('open'); tkAbiertoId = null; }
+$('#overlay-tk').addEventListener('click', e => { if (e.target.id === 'overlay-tk') cerrarTicket(); });
+
+function moverTk(id, estado){
+  if (!soloAdmin()) return;
+  const t = db.tickets.find(x => x.id === id);
+  const resp = $('#tk-resp').value.trim(), nota = $('#tk-nota').value.trim();
+  const err = m => { $('#tk-err').textContent = m; };
+  let detalle = nota;
+  if (estado === 'Rechazada' && !nota) return err('Escribe en “Comentario” el motivo del rechazo.');
+  if (estado === 'Atendida') {
+    if (!resp) return err('Indica en “Responsable” quién atendió la solicitud.');
+    if ($('#tk-descontar')?.checked) {
+      const nuevos = t.lineas.filter(l => l.itemId && itemDe(l.itemId)).map(l =>
+        ({id:sig(), n:db.seq, itemId:l.itemId, tipo:'Salida', cantidad:+l.cantidad, fecha:hoyISO(), por:t.solicitante, obs:`Entrega ${t.id}`}));
+      db.movs.push(...nuevos); calcEconomato();
+      const neg = nuevos.find(m => db.movs.some(x => x.itemId === m.itemId && x._stock < 0));
+      if (neg) { db.movs = db.movs.filter(m => !nuevos.includes(m)); calcEconomato();
+        return err(`No hay stock suficiente de ${itemDe(neg.itemId).nombre}. Registra la compra antes de atender.`); }
+      t.movs = nuevos.map(m => m.id);
+      if (nuevos.length) detalle = [nota, `Se descontó del stock: ${t.lineas.filter(l => l.itemId).map(l => nombreLinea(l) + ' ×' + l.cantidad).join(', ')}`].filter(Boolean).join(' · ');
+    }
+    t.atendidoEl = hoyISO();
+  }
+  if (estado === 'Pendiente') {   // reabrir
+    if (t.movs?.length && confirm('Este ticket descontó artículos del stock al atenderse. ¿Devolverlos al stock?')) {
+      db.movs = db.movs.filter(m => !t.movs.includes(m.id)); t.movs = [];
+      detalle = [nota, 'Se devolvió al stock lo descontado'].filter(Boolean).join(' · ');
+    }
+    t.atendidoEl = '';
+  }
+  if (resp) t.responsable = resp;
+  pasoTk(t, estado, resp, detalle);
+  persistir(); render(); toast(`${t.id}: ${estado}`);
+}
+function comentarTk(id){
+  if (!soloAdmin()) return;
+  const t = db.tickets.find(x => x.id === id), nota = $('#tk-nota').value.trim(), resp = $('#tk-resp').value.trim();
+  if (!nota) return $('#tk-err').textContent = 'Escribe el comentario.';
+  if (resp) t.responsable = resp;
+  pasoTk(t, 'Comentario', resp, nota);
+  $('#tk-nota').value = '';
+  persistir(); render();
+}
+function crearDesdeLinea(tid, idx){
+  if (!soloAdmin()) return;
+  const t = db.tickets.find(x => x.id === tid), l = t.lineas[idx];
+  formItem(null, {almacen:t.almacen, nombre:l.nombre}, nuevo => { l.itemId = nuevo.id; l.nombre = ''; });
+}
+
+/* =========================================================
+   USUARIO — ingreso con nombre y correo @ttaudit.com
+   Roles: el ADMIN carga y actualiza todo; el resto solo
+   ve el resumen y crea / sigue sus solicitudes.
+   ========================================================= */
+const DOMINIO = 'ttaudit.com';
+const CORREO_FINANZAS = 'finanzas@ttaudit.com';
+const ADMIN_EMAIL = 'contabilidad2@ttaudit.com';
+const VISTAS_USUARIO = ['panel', 'solicitudes', 'cochera'];
+const SKEY = 'tta_usuario', CLAVE_LOCAL = 'tta_admin_clave_v2', ADMIN_OK = 'tta_admin_ok';
+/* Clave del administrador, guardada cifrada (hash), nunca en texto.
+   Para cambiarla para todos: entra como admin → "Cambiar clave" y pega aquí la línea que te muestra. */
+const ADMIN_CLAVE = {sha:'8bb1108b8fdf2ae7b98c26cfc0906d83c73c8bd552db89abeb1eab50dcd72c9e', alt:'djb2:-1796181221'};
+let usuario = null, rolLogin = 'usuario';
+const esAdmin = () => usuario?.email === ADMIN_EMAIL;
+function soloAdmin(){
+  if (esAdmin()) return true;
+  toast(`Solo ${ADMIN_EMAIL} puede cargar o modificar información`);
+  return false;
+}
+function errLogin(m){ $('#login-err').textContent = m; }
+
+function hashAlt(c){ let h = 5381; for (const ch of 'tta|' + c) h = ((h << 5) + h + ch.charCodeAt(0)) | 0; return 'djb2:' + h; }
+async function hashSha(c){
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('tta|' + c));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
+  } catch(e) { return null; }   // navegador sin crypto.subtle: se usa el hash alternativo
+}
+const claveLocal = () => { try { return JSON.parse(localStorage.getItem(CLAVE_LOCAL)); } catch(e){ return null; } };
+async function claveCorrecta(c){
+  const ref = claveLocal() || ADMIN_CLAVE, sha = await hashSha(c);
+  return sha ? sha === ref.sha : hashAlt(c) === ref.alt;
+}
+const adminVerificado = () => { try { return REMOTO ? !!sessionStorage.getItem('tta_admin_token') : sessionStorage.getItem(ADMIN_OK) === '1'; } catch(e){ return false; } };
+
+function iniciarLogin(){
+  try { const u = JSON.parse(localStorage.getItem(SKEY)); if (u && u.email) usuario = u; } catch(e){}
+  // El administrador vuelve a poner su clave cada vez que abre el navegador
+  if (usuario && (!esAdmin() || adminVerificado())) entrar(); else mostrarLogin();
+}
+function tabLogin(rol){
+  rolLogin = rol;
+  $$('.tabs-login button').forEach(b => b.classList.toggle('on', b.dataset.rol === rol));
+  $('#login').classList.toggle('login-admin', rol === 'admin');
+  $('#lg-sub').innerHTML = rol === 'admin'
+    ? 'Acceso de <b>contabilidad</b>: carga y actualiza toda la información'
+    : 'Ingresa con tu nombre y tu correo <b>@ttaudit.com</b>';
+  $('#lg-submit').textContent = rol === 'admin' ? 'Ingresar como administrador' : 'Ingresar';
+  errLogin('');
+  setTimeout(() => (rol === 'admin' ? $('#lg-clave') : ($('#lg-nombre').value ? $('#lg-email') : $('#lg-nombre'))).focus(), 30);
+}
+function mostrarLogin(){
+  const admin = usuario?.email === ADMIN_EMAIL;
+  $('#lg-nombre').value = usuario?.nombre || '';
+  $('#lg-email').value = admin ? '' : (usuario?.email || '');
+  $('#lg-admin-email').value = ADMIN_EMAIL;
+  $('#lg-app').value = usuario?.app || 'gmail';
+  $('#lg-clave').value = '';
+  $('#login').classList.add('open');
+  tabLogin(admin ? 'admin' : 'usuario');
+}
+$('#login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const nombre = $('#lg-nombre').value.trim().replace(/\s+/g, ' ');
+  if (nombre.split(' ').length < 2) return errLogin('Escribe tu nombre y apellido.');
+  let email;
+  if (rolLogin === 'admin') {
+    if (!$('#lg-clave').value) return errLogin('Escribe la clave de administrador.');
+    if (REMOTO) {   // la clave la verifica el servidor
+      const btn = $('#lg-submit'); btn.disabled = true; btn.textContent = 'Verificando…';
+      try { const j = await api('loginAdmin', {clave: $('#lg-clave').value}); sessionStorage.setItem(TOKEN_KEY, j.token); }
+      catch(err) { $('#lg-clave').value = ''; return errLogin(err.message); }
+      finally { btn.disabled = false; btn.textContent = 'Ingresar como administrador'; }
+    } else if (!(await claveCorrecta($('#lg-clave').value))) { $('#lg-clave').value = ''; return errLogin('Clave incorrecta.'); }
+    email = ADMIN_EMAIL;
+    try { sessionStorage.setItem(ADMIN_OK, '1'); } catch(err){}
+  } else {
+    email = $('#lg-email').value.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+$/.test(email) || !email.endsWith('@' + DOMINIO)) return errLogin(`Usa tu correo corporativo @${DOMINIO}.`);
+    if (email === ADMIN_EMAIL) { tabLogin('admin'); return errLogin('Para entrar con este correo usa la pestaña Administrador e ingresa la clave.'); }
+  }
+  usuario = {nombre, email, app: $('#lg-app').value};
+  try { localStorage.setItem(SKEY, JSON.stringify(usuario)); } catch(err){}
+  entrar();
+  toast(`Hola, ${nombre.split(' ')[0]}`);
+});
+function entrar(){
+  $('#login').classList.remove('open');
+  document.body.classList.toggle('rol-usuario', !esAdmin());
+  document.body.classList.toggle('rol-admin', esAdmin());
+  const activa = document.querySelector('.view.active')?.id.replace('view-', '');
+  if (!esAdmin() && !VISTAS_USUARIO.includes(activa)) irA('panel');
+  snap = null;   // la foto del servidor se toma al recargar
+  render();
+  estadoSync('ok');
+  if (REMOTO) recargar();
+}
+function cerrarSesion(){
+  if (REMOTO && esAdmin() && cambiosPendientes() && !confirm('Hay cambios que aún no se guardan en el servidor. ¿Salir de todos modos?')) return;
+  try { localStorage.removeItem(SKEY); sessionStorage.removeItem(ADMIN_OK); sessionStorage.removeItem(TOKEN_KEY); } catch(e){}
+  snap = null;
+  cerrarModal(); cerrarTicket();
+  mostrarLogin();
+  usuario = null;
+}
+function cambiarClave(){
+  if (!soloAdmin()) return;
+  abrirModal({
+    titulo: 'Cambiar clave de administrador',
+    sub: REMOTO ? 'La clave se guarda en el servidor y aplica de inmediato en todas las computadoras.'
+                : 'Se aplica de inmediato en este navegador. Para que valga en todas las computadoras, pega en el archivo la línea que aparecerá al guardar.',
+    campos: [{k:'actual', l:'Clave actual', t:'password', req:1, full:1}, {k:'nueva', l:'Clave nueva (mín. 8)', t:'password', req:1}, {k:'nueva2', l:'Repite la clave nueva', t:'password', req:1}],
+    guardar: d => {
+      if (d.nueva.length < 8) return 'La clave nueva debe tener al menos 8 caracteres.';
+      if (d.nueva !== d.nueva2) return 'Las claves nuevas no coinciden.';
+      if (REMOTO) {
+        api('cambiarClave', {actual: d.actual, nueva: d.nueva})
+          .then(() => toast('Clave cambiada para todas las computadoras'))
+          .catch(e => alert('No se cambió la clave: ' + e.message));
+        return;
+      }
+      (async () => {
+        if (!(await claveCorrecta(d.actual))) return alert('La clave actual no es correcta. No se cambió.');
+        const nueva = {sha: await hashSha(d.nueva) || '', alt: hashAlt(d.nueva)};
+        try { localStorage.setItem(CLAVE_LOCAL, JSON.stringify(nueva)); } catch(e){}
+        const linea = `const ADMIN_CLAVE = {sha:'${nueva.sha}', alt:'${nueva.alt}'};`;
+        setTimeout(() => abrirModal({
+          titulo: '✓ Clave cambiada en este navegador',
+          sub: 'Para que la nueva clave funcione en todas las computadoras: abre el archivo con el Bloc de notas, busca la línea que empieza con “const ADMIN_CLAVE” y reemplázala por esta. Luego vuelve a publicar o compartir el archivo.',
+          campos: [],
+          extra: `<div class="full"><pre class="code" id="linea-clave">${esc(linea)}</pre>
+            <button type="button" class="btn sm" style="margin-top:8px" onclick="navigator.clipboard?.writeText($('#linea-clave').textContent).then(() => toast('Línea copiada'))">Copiar línea</button></div>`,
+          guardar: () => {}
+        }), 60);
+      })();
+    }
+  });
+}
+function renderUsuario(){
+  if (!usuario) { $('#user-box').innerHTML = ''; return; }
+  const ini = usuario.nombre.split(' ').map(x => x[0]).slice(0,2).join('').toUpperCase();
+  $('#user-box').innerHTML = `<div class="avatar">${esc(ini)}</div>
+    <div class="user-txt"><b>${esc(usuario.nombre)}</b><small>${esc(usuario.email)}</small>
+    <span class="rol-tag">${esAdmin() ? 'Administrador' : 'Usuario'}</span><br>
+    <button class="link" onclick="cerrarSesion()">Cambiar de usuario</button>${esAdmin() ? ' · <button class="link" onclick="cambiarClave()">Cambiar clave</button>' : ''}</div>`;
+}
+
+/* =========================================================
+   SINCRONIZACIÓN CON EL SERVIDOR (Google Sheets)
+   - Usuarios: leen datos y crean solicitudes/reservas por el servidor.
+   - Admin: cada cambio se guarda solo, unos segundos después.
+   ========================================================= */
+const TOKEN_KEY = 'tta_admin_token';
+const TABLAS_ADMIN = ['equipos','sillas','items','movs','espacios','historial'];
+const POR_REGISTRO = ['tickets','reservas','liberaciones'];
+const TODAS_TABLAS = [...TABLAS_ADMIN, ...POR_REGISTRO];
+let snap = null, syncTimer = null, syncEnCurso = false, syncOtraVez = false, ultimaCarga = 0, marcarInicializado = false;
+const sinTransitorios = x => JSON.stringify(x, (k, v) => k.startsWith('_') ? undefined : v);
+const tokenAdmin = () => { try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch(e){ return ''; } };
+
+async function api(accion, datos = {}){
+  let r, j;
+  try {
+    r = await fetch(API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({accion, token: tokenAdmin(), usuario: usuario ? {nombre: usuario.nombre, email: usuario.email} : null, ...datos})});
+  } catch(e) { throw new Error('Sin conexión con el servidor. Revisa tu internet e inténtalo de nuevo.'); }
+  try { j = await r.json(); } catch(e) { throw new Error('El servidor respondió algo inesperado. Revisa la URL del Apps Script (API_URL).'); }
+  if (!j.ok) {
+    const e = new Error(j.error || 'Error del servidor'); e.codigo = j.codigo;
+    if (j.codigo === 'AUTH') sesionVencida();
+    throw e;
+  }
+  return j;
+}
+function sesionVencida(){
+  try { sessionStorage.removeItem(TOKEN_KEY); sessionStorage.removeItem(ADMIN_OK); } catch(e){}
+  cerrarModal(); cerrarTicket();
+  mostrarLogin();
+  errLogin('Tu sesión de administrador venció. Vuelve a ingresar la clave.');
+}
+
+function estadoSync(estado, detalle = ''){
+  const box = $('#sync-box');
+  if (!REMOTO) { box.className = 'sync local'; box.innerHTML = esAdmin() ? '<i></i>Modo local · datos solo en este navegador' : ''; return; }
+  const hora = new Date().toLocaleTimeString('es-PE', {hour:'2-digit', minute:'2-digit'});
+  const T = {
+    ok:        ['', `Sincronizado · ${hora}`],
+    cargando:  ['pend', 'Actualizando…'],
+    pendiente: ['pend', 'Cambios por guardar…'],
+    guardando: ['pend', 'Guardando…'],
+    error:     ['err', 'Sin conexión · ' + detalle],
+  }[estado];
+  box.className = 'sync ' + T[0];
+  box.innerHTML = `<i></i><span title="${esc(detalle)}">${esc(T[1].length > 46 ? T[1].slice(0, 44) + '…' : T[1])}</span>
+    <button onclick="${estado === 'error' && esAdmin() && cambiosPendientes() ? 'sincronizar()' : 'recargar()'}">${estado === 'error' ? 'Reintentar' : 'Actualizar'}</button>`;
+}
+
+function normalizar(){
+  TODAS_TABLAS.forEach(t => { db[t] = Array.isArray(db[t]) ? db[t] : [];
+    db[t].forEach(r => Object.keys(r).forEach(k => { if (r[k] == null) r[k] = ''; })); });
+  db.movs.forEach(m => { m.cantidad = +m.cantidad || 0; m.n = +m.n || 0; });
+  db.items.forEach(i => { i.minimo = +i.minimo || 0; });
+  db.espacios.forEach(e => {
+    e.activo = !(e.activo === false || String(e.activo) === 'false');
+    if (e.fijo && !titularesDe(e).length) e.titulares = [{nombre:e.fijo, email:''}];
+    delete e.fijo;
+    e.titulares = titularesDe(e); e.cupos = cuposDe(e);
+  });
+  db.tickets.forEach(t => {
+    t.n = +t.n || 0;
+    ['lineas','timeline','movs'].forEach(k => { if (!Array.isArray(t[k])) t[k] = []; });
+    t.lineas.forEach(l => { l.cantidad = +l.cantidad || 0; });
+    if (!t.correo || typeof t.correo !== 'object') t.correo = {estado:'por enviar'};
+  });
+}
+function tomarFoto(){
+  snap = {t:{}, r:{}};
+  TABLAS_ADMIN.forEach(t => snap.t[t] = sinTransitorios(db[t]));
+  POR_REGISTRO.forEach(t => { snap.r[t] = {}; db[t].forEach(x => snap.r[t][x.id] = sinTransitorios(x)); });
+}
+function cambiosPendientes(){
+  if (!snap) return null;
+  const c = {tablas:{}, upserts:{}, borrar:{}};
+  let hay = false;
+  TABLAS_ADMIN.forEach(t => { const j = sinTransitorios(db[t]); if (j !== snap.t[t]) { c.tablas[t] = JSON.parse(j); hay = true; } });
+  POR_REGISTRO.forEach(t => {
+    const ups = db[t].filter(x => snap.r[t][x.id] !== sinTransitorios(x));
+    const ids = new Set(db[t].map(x => x.id)), del = Object.keys(snap.r[t]).filter(id => !ids.has(id));
+    if (ups.length) { c.upserts[t] = JSON.parse(sinTransitorios(ups)); hay = true; }
+    if (del.length) { c.borrar[t] = del; hay = true; }
+  });
+  return hay ? c : null;
+}
+function programarSync(){ if (!snap) return; clearTimeout(syncTimer); estadoSync('pendiente'); syncTimer = setTimeout(sincronizar, 700); }
+async function sincronizar(){
+  if (!REMOTO || !esAdmin() || !snap) return;
+  if (syncEnCurso) { syncOtraVez = true; return; }
+  const c = cambiosPendientes();
+  if (!c && !marcarInicializado) { estadoSync('ok'); return; }
+  syncEnCurso = true; estadoSync('guardando');
+  const envio = c || {};
+  if (marcarInicializado) envio.meta = {inicializado: true};
+  try {
+    await api('guardar', envio);
+    Object.entries(envio.tablas || {}).forEach(([t, v]) => snap.t[t] = sinTransitorios(v));
+    Object.entries(envio.upserts || {}).forEach(([t, l]) => l.forEach(x => snap.r[t][x.id] = sinTransitorios(x)));
+    Object.entries(envio.borrar || {}).forEach(([t, l]) => l.forEach(id => delete snap.r[t][id]));
+    marcarInicializado = false;
+    estadoSync(cambiosPendientes() ? 'pendiente' : 'ok');
+  } catch(e) {
+    estadoSync('error', e.message);
+    if (e.codigo !== 'AUTH') { clearTimeout(syncTimer); syncTimer = setTimeout(sincronizar, 15000); }
+  } finally {
+    syncEnCurso = false;
+    if (syncOtraVez) { syncOtraVez = false; sincronizar(); }
+  }
+}
+async function recargar(){
+  if (!REMOTO || !usuario) return;
+  if (esAdmin() && cambiosPendientes()) { await sincronizar(); if (cambiosPendientes()) return; }   // no pisar cambios sin guardar
+  estadoSync('cargando');
+  try {
+    const j = await api('cargar');
+    const local = db;
+    aplicarDatos(j.datos);
+    ultimaCarga = Date.now();
+    estadoSync('ok');
+    if (esAdmin() && !j.meta.inicializado) inicializarServidor(local);
+  } catch(e) { estadoSync('error', e.message); }
+}
+function aplicarDatos(d){
+  db = {...baseVacia(), ...d, seq: Math.max(+db.seq || 1, Date.now()), tkSeq: db.tkSeq || 1};
+  normalizar(); tomarFoto(); guardarLocal(); render();
+  if (esAdmin() && migrarCocherasEjemplo()) { persistir(); render(); }
+}
+/* Guarda en memoria un registro que el servidor acaba de crear o cambiar */
+function agregarDelServidor(tabla, reg){
+  const i = db[tabla].findIndex(x => x.id === reg.id);
+  if (i >= 0) db[tabla][i] = reg; else db[tabla].push(reg);
+  normalizar();
+  if (snap) snap.r[tabla][reg.id] = sinTransitorios(db[tabla].find(x => x.id === reg.id));
+  guardarLocal(); render();
+}
+/* Primera vez que contabilidad se conecta a un servidor vacío */
+function inicializarServidor(local){
+  const vacio = TODAS_TABLAS.every(t => !db[t].length);
+  if (vacio) {
+    const conDatos = local && ['equipos','sillas','movs','tickets','reservas'].some(t => (local[t] || []).length);
+    if (conDatos) { local.espacios ??= []; local.liberaciones ??= []; }
+    if (conDatos && confirm('El servidor está vacío y este navegador tiene datos guardados.\n\n¿Subirlos al servidor para que todos los vean?\n\nAceptar = subir mis datos · Cancelar = empezar con la base inicial (pilas, CC ADM y cocheras 70, 38 y 23)')) {
+      TODAS_TABLAS.forEach(t => db[t] = JSON.parse(sinTransitorios(local[t] || [])));
+      normalizar(); migrarCocherasEjemplo();
+    } else {
+      db.items = [...ECONOMATO_INICIAL, ...CC_ADM_INICIAL].map(i => ({id: sig(), ...i}));
+      db.espacios = ESPACIOS_INICIALES.map(e => ({id: sig(), ...JSON.parse(JSON.stringify(e))}));
+    }
+    toast('Preparando el servidor por primera vez…');
+  }
+  marcarInicializado = true;
+  persistir(); render();
+}
+if (REMOTO) {
+  setInterval(() => { if (usuario && document.visibilityState === 'visible' && !$('#overlay').classList.contains('open')) recargar(); }, 60000);
+  window.addEventListener('focus', () => { if (usuario && Date.now() - ultimaCarga > 20000 && !$('#overlay').classList.contains('open')) recargar(); });
+  window.addEventListener('beforeunload', e => { if (esAdmin() && cambiosPendientes()) { e.preventDefault(); e.returnValue = ''; } });
+}
+
+/* ---------- Correo a finanzas (se abre listo para enviar) ---------- */
+function textoCorreo(t){
+  const eco = calcEconomato();
+  const lineas = t.lineas.map(l => {
+    const it = l.itemId && itemDe(l.itemId), e = evaluarLinea(l, eco);
+    const stock = it && eco[it.id].movs ? ` · stock actual: ${eco[it.id].stock}` : '';
+    return `- ${nombreLinea(l)}: ${l.cantidad}${it ? ' ' + it.unidad : ''}  (${e.txt}${stock})`;
+  }).join('\n');
+  return [
+    `Nueva solicitud ${t.id}`, '',
+    `Solicitante: ${t.solicitante}${t.solicitanteEmail ? ' (' + t.solicitanteEmail + ')' : ''}`,
+    `Área / cuenta: ${t.area || '—'}`,
+    `Almacén: ${ALMACENES[t.almacen].titulo.replace(/^\S+\s/, '')}`,
+    `Prioridad: ${t.prioridad}`,
+    `Para cuándo: ${t.requeridoPara ? isoAFecha(t.requeridoPara) : '—'}`,
+    `Fecha de solicitud: ${isoAFecha(t.fecha)}`, '',
+    'Artículos solicitados:', lineas, '',
+    ...(t.motivo ? ['Motivo / comentario:', t.motivo, ''] : []),
+    '— Enviado desde TT Audit · Inventario',
+  ].join('\n');
+}
+function abrirCorreo(t, app){
+  const asunto = `[${t.id}] Solicitud ${t.almacen} — ${t.solicitante}${t.prioridad === 'Urgente' ? ' (URGENTE)' : ''}`;
+  const cuerpo = textoCorreo(t), enc = encodeURIComponent;
+  if (app === 'gmail') {
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${enc(CORREO_FINANZAS)}&su=${enc(asunto)}&body=${enc(cuerpo)}${usuario ? '&authuser=' + enc(usuario.email) : ''}`, '_blank', 'noopener');
+  } else {
+    const a = document.createElement('a');
+    a.href = `mailto:${CORREO_FINANZAS}?subject=${enc(asunto)}&body=${enc(cuerpo)}`;
+    a.click();
+  }
+}
+function enviarAFinanzas(id, app){
+  const t = db.tickets.find(x => x.id === id); if (!t) return;
+  app = app || usuario?.app || 'gmail';
+  abrirCorreo(t, app);
+  t.correo = {estado:'enviado', fecha:new Date().toLocaleString('es-PE'), app};
+  t.timeline.push({fecha:t.correo.fecha, estado:'Correo a finanzas', por:usuario?.nombre || '',
+    nota:`Se abrió el correo para ${CORREO_FINANZAS} en ${app === 'gmail' ? 'Gmail' : 'la app de correo'}`});
+  persistir(); render();
+}
+function tagCorreo(t){
+  const e = t.correo?.estado;
+  return e === 'enviado' ? '<span class="tag t-ok">✉ Enviado</span>' : e === 'error' ? '<span class="tag t-bad">Error de envío</span>' : '<span class="tag t-warn">Por enviar</span>';
+}
+
+/* =========================================================
+   CSV
+   ========================================================= */
+function parseCSV(txt){
+  txt = txt.replace(/^﻿/, '');
+  const primera = txt.split('\n')[0], sep = (primera.match(/;/g)||[]).length >= (primera.match(/,/g)||[]).length ? ';' : ',';
+  const filas = []; let fila = [], campo = '', comillas = false;
+  for (let i = 0; i < txt.length; i++){
+    const c = txt[i];
+    if (comillas){ if (c === '"' && txt[i+1] === '"'){ campo += '"'; i++; } else if (c === '"') comillas = false; else campo += c; }
+    else if (c === '"') comillas = true;
+    else if (c === sep){ fila.push(campo); campo = ''; }
+    else if (c === '\n'){ fila.push(campo.replace(/\r$/,'')); filas.push(fila); fila = []; campo = ''; }
+    else campo += c;
+  }
+  if (campo || fila.length){ fila.push(campo.replace(/\r$/,'')); filas.push(fila); }
+  return filas.filter(f => f.some(x => x.trim()));
+}
+function descargar(nombre, filas){
+  const q = x => `"${String(x ?? '').replace(/"/g,'""')}"`;
+  const csv = filas.map(f => f.map(q).join(';')).join('\r\n');
+  const url = URL.createObjectURL(new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8'}));
+  Object.assign(document.createElement('a'), {href:url, download:nombre}).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+/* =========================================================
+   EXCEL — descargar y cargar con el MISMO formato.
+   Cargar reemplaza todo lo de esa sección (se puede deshacer).
+   ========================================================= */
+const HOJAS = {
+  Equipos:     CSV_COLS.equipos,
+  Sillas:      CSV_COLS.sillas,
+  Articulos:   [['Almacen','almacen'],['Nombre','nombre'],['Categoria','categoria'],['Tipo','tipo'],['Unidad','unidad'],['Minimo','minimo'],['Stock actual','_stock']],
+  Movimientos: [['Fecha','fecha'],['Almacen','almacen'],['Articulo','articulo'],['Movimiento','tipo'],['Cantidad','cantidad'],['Stock despues','_stock'],['Costo','costo'],['Registrado por','por'],['Observacion','obs']],
+  Solicitudes: [['Ticket','id'],['Fecha','fecha'],['Solicitante','solicitante'],['Correo solicitante','solicitanteEmail'],['Area','area'],['Almacen','almacen'],['Prioridad','prioridad'],['Para cuando','requeridoPara'],['Articulos','articulos'],['Motivo','motivo'],['Estado','estado'],['Responsable','responsable'],['Atendida el','atendidoEl'],['Correo finanzas','correo']],
+  Cocheras:    [['Codigo','codigo'],['Ubicacion','ubicacion'],['Tipo','tipo'],['Cupos','cupos'],['Titulares','titulares'],['Activo','activo'],['Observaciones','obs']],
+  Ausencias:   [['Desde','desde'],['Hasta','hasta'],['Cochera','espacio'],['Titular','titular'],['Motivo','motivo'],['Estado','estado'],['Comentario','obs']],
+  Reservas:    [['Fecha','fecha'],['Turno','turno'],['Cochera','espacio'],['Nombre','nombre'],['Correo','email'],['Placa','placa'],['Estado','estado'],['Comentario','obs']],
+  Historial:   [['Fecha','fecha'],['Base','base'],['Activo','ref'],['Nombre','nombre'],['Accion','accion'],['Estado','estado'],['Condicion','condicion'],['Asignado a','asignado'],['Registrado por','por'],['Comentario','obs']],
+};
+const PANELES = {
+  equipos:     {hojas:['Equipos'],     archivo:() => 'equipos'},
+  sillas:      {hojas:['Sillas'],      archivo:() => 'sillas'},
+  economato:   {hojas:['Articulos','Movimientos'], archivo:() => ui.almacen === 'CC ADM' ? 'cc_adm' : 'inventario_oficina'},
+  solicitudes: {hojas:['Solicitudes'], archivo:() => 'solicitudes'},
+  cochera:     {hojas:['Cocheras','Reservas','Ausencias'], archivo:() => 'cochera'},
+  historial:   {hojas:['Historial'],   archivo:() => 'historial'},
+  todo:        {hojas:Object.keys(HOJAS), archivo:() => 'tt_audit_copia_completa'},
+};
+const fx = f => f ? isoAFecha(f) : '';
+const hayDatos = o => Object.entries(o).some(([k,v]) => k !== '_fila' && String(v ?? '').trim());
+function num(v){
+  let s = String(v ?? '').trim().replace(/\s/g,'').replace(/^S\/\.?/i,'');
+  if (!s) return NaN;
+  s = s.includes(',') && s.includes('.') ? s.replace(/,/g,'') : s.replace(',', '.');
+  return Number(s);
+}
+function fechaAISO(v){
+  const s = String(v ?? '').trim(); if (!s) return '';
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (m) return `${m[3].length === 2 ? '20' + m[3] : m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return null;
+}
+function almacenDe(v, def){
+  const n = norm(v); if (!n) return def;
+  if (n.includes('cc') || n.includes('caja')) return 'CC ADM';
+  if (n.includes('oficina')) return 'Oficina';
+  return null;
+}
+
+/* ---------- Descargar ---------- */
+function filasHoja(h, alm){
+  const eco = calcEconomato();
+  switch (h) {
+    case 'Equipos': return db.equipos;
+    case 'Sillas': return db.sillas;
+    case 'Articulos': return db.items.filter(i => !alm || i.almacen === alm).map(i => ({...i, _stock: eco[i.id].movs ? eco[i.id].stock : ''}));
+    case 'Movimientos': return [...db.movs].sort((a,b) => a.fecha.localeCompare(b.fecha) || a.n - b.n)
+      .map(m => { const i = itemDe(m.itemId) || {};
+        return {...m, fecha:fx(m.fecha), almacen:i.almacen, articulo:i.nombre, tipo:m.tipo === 'Ajuste' ? 'Conteo fisico' : m.tipo, costo:m.costo ? num(m.costo) : ''}; })
+      .filter(m => m.articulo && (!alm || m.almacen === alm));
+    case 'Solicitudes': return db.tickets.map(t => ({...t, fecha:fx(t.fecha), requeridoPara:fx(t.requeridoPara), atendidoEl:fx(t.atendidoEl),
+      articulos:t.lineas.map(l => `${nombreLinea(l)} x${l.cantidad}`).join('; '), correo:t.correo?.estado === 'enviado' ? 'Enviado' : 'Por enviar'}));
+    case 'Cocheras': return db.espacios.map(e => ({...e, cupos:cuposDe(e), titulares:titularesATexto(e.titulares), activo: e.activo === false ? 'No' : 'Si'}));
+    case 'Ausencias': return [...db.liberaciones].sort((a,b) => a.desde.localeCompare(b.desde))
+      .map(l => ({...l, desde:fx(l.desde), hasta:fx(l.hasta), espacio:espacioDe(l.espacioId)?.codigo || ''}));
+    case 'Reservas': return [...db.reservas].sort((a,b) => a.fecha.localeCompare(b.fecha))
+      .map(r => ({...r, fecha:fx(r.fecha), espacio:espacioDe(r.espacioId)?.codigo || ''}));
+    case 'Historial': return db.historial;
+  }
+}
+function descargarPanel(p){
+  if (!soloAdmin()) return;
+  const P = PANELES[p], alm = p === 'economato' ? ui.almacen : null;
+  const libro = P.hojas.map(h => [h, [HOJAS[h].map(c => c[0]), ...filasHoja(h, alm).map(r => HOJAS[h].map(([,k]) => {
+    const x = r[k]; return typeof x === 'number' ? x : String(x ?? ''); }))]]);
+  const nombre = `${P.archivo()}_${hoyISO()}`;
+  if (window.XLSX) {
+    const wb = XLSX.utils.book_new();
+    libro.forEach(([h, aoa]) => {
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = aoa[0].map((_, i) => ({wch: Math.min(48, Math.max(10, ...aoa.map(r => String(r[i] ?? '').length)) + 2)}));
+      ws['!autofilter'] = {ref: XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:Math.max(0, aoa.length - 1), c:aoa[0].length - 1}})};
+      XLSX.utils.book_append_sheet(wb, ws, h);
+    });
+    XLSX.writeFile(wb, nombre + '.xlsx');
+  } else {
+    if (p === 'todo') return alert('La copia completa necesita conexión a internet para generar el Excel.');
+    libro.forEach(([h, aoa]) => descargar(`${nombre}${libro.length > 1 ? '_' + h.toLowerCase() : ''}.csv`, aoa));
+    toast('Sin conexión: se descargó en CSV');
+  }
+}
+
+/* ---------- Leer archivo ---------- */
+async function leerLibro(file){
+  if (/\.csv$/i.test(file.name)) return {_csv: parseCSV(await file.text())};
+  if (!window.XLSX) throw new Error('Para leer archivos Excel se necesita conexión a internet. Conéctate o guarda el archivo como CSV.');
+  const wb = XLSX.read(await file.arrayBuffer(), {cellNF:true});
+  const out = {};
+  wb.SheetNames.forEach(n => out[n] = hojaAFilas(wb.Sheets[n]));
+  return out;
+}
+/* Lee celda por celda: las fechas reales de Excel se convierten a dd/mm/aaaa */
+function hojaAFilas(ws){
+  if (!ws['!ref']) return [];
+  const r = XLSX.utils.decode_range(ws['!ref']), out = [], dos = n => String(n).padStart(2,'0');
+  for (let R = r.s.r; R <= r.e.r; R++) {
+    const fila = [];
+    for (let C = r.s.c; C <= r.e.c; C++) {
+      const c = ws[XLSX.utils.encode_cell({r:R, c:C})];
+      if (!c || c.v == null || c.v === '') fila.push('');
+      else if (c.t === 'n' && c.z && XLSX.SSF.is_date(c.z)) { const d = XLSX.SSF.parse_date_code(c.v); fila.push(`${dos(d.d)}/${dos(d.m)}/${d.y}`); }
+      else if (c.t === 'd') { const d = new Date(c.v); fila.push(`${dos(d.getDate())}/${dos(d.getMonth() + 1)}/${d.getFullYear()}`); }
+      else fila.push(c.t === 'n' ? c.v : String(c.v));
+    }
+    out.push(fila);
+  }
+  return out;
+}
+function hoja(libro, h, unica){
+  const k = Object.keys(libro).find(n => norm(n) === norm(h));
+  if (k) return libro[k];
+  if (unica) return libro._csv || libro[Object.keys(libro)[0]];
+  return null;
+}
+function aObjetos(aoa, h){
+  const filas = aoa.map((r, i) => [r, i + 1]).filter(([r]) => r.some(c => String(c ?? '').trim()));
+  if (!filas.length) return [];
+  const mapa = Object.fromEntries(HOJAS[h].map(([hd, k]) => [norm(hd), k]));
+  const usaAlias = h === 'Equipos' || h === 'Sillas';
+  const keys = filas[0][0].map(c => mapa[norm(c)] || (usaAlias && ALIAS[norm(c)]) || null);
+  const CLAVE = {Equipos:['nombre'], Sillas:['codigo','nombre'], Articulos:['nombre'], Movimientos:['articulo'], Solicitudes:['solicitante'], Historial:['accion'], Cocheras:['codigo'], Reservas:['espacio'], Ausencias:['titular']};
+  if (!keys.some(Boolean) || !CLAVE[h].some(k => keys.includes(k))) throw new Error(`La hoja “${h}” no tiene los encabezados esperados:\n${HOJAS[h].map(c => c[0]).join(' · ')}\n\nDescarga el Excel de esta sección para ver el formato.`);
+  return filas.slice(1).map(([r, n]) => { const o = {_fila:n}; keys.forEach((k, j) => { if (k) o[k] = String(r[j] ?? '').trim(); }); return o; });
+}
+
+/* ---------- Convertir filas en datos ---------- */
+function parseEquipos(objs){
+  const lista = [], avisos = [], ids = new Set();
+  objs.forEach(o => {
+    if (!o.nombre) { if (hayDatos(o)) avisos.push(`fila ${o._fila}: falta el nombre`); return; }
+    const a = limpiarEquipo(o);
+    if (!a.id || ids.has(a.id)) a.id = ''; else ids.add(a.id);
+    lista.push(a);
+  });
+  let max = Math.max(0, ...lista.map(a => +a.id || 0));
+  lista.forEach(a => { if (!a.id) a.id = String(++max); });
+  return {lista, avisos};
+}
+function parseSillas(objs){
+  const lista = [], avisos = [], cods = new Set();
+  objs.forEach(o => {
+    const s = {}; CAMPOS.sillas.forEach(f => s[f.k] = String(o[f.k] ?? '').trim());
+    if (!s.codigo && !s.asignado && !s.nombre) { if (hayDatos(o)) avisos.push(`fila ${o._fila}: falta código, descripción o persona`); return; }
+    if (s.codigo && cods.has(norm(s.codigo))) { avisos.push(`fila ${o._fila}: el código ${s.codigo} está repetido`); return; }
+    if (s.codigo) cods.add(norm(s.codigo));
+    s.estado = s.estado ? estadoValido(s.estado) : (s.asignado ? 'Asignado' : 'Disponible');
+    s.condicion = condValida(s.condicion) || inferirCondicion(s);
+    s.tipo = TIPOS_SILLA.find(t => norm(t) === norm(s.tipo)) || (s.tipo ? 'Otra' : 'Operativa');
+    const prev = s.codigo && db.sillas.find(x => norm(x.codigo) === norm(s.codigo));
+    s.id = prev ? prev.id : sig();
+    lista.push(s);
+  });
+  return {lista, avisos};
+}
+function parseItems(objs, alm){
+  const lista = [], avisos = [], vistos = new Set(), stocks = {};
+  objs.forEach(o => {
+    if (!o.nombre) { if (hayDatos(o)) avisos.push(`fila ${o._fila}: falta el nombre`); return; }
+    const a = almacenDe(o.almacen, alm || 'Oficina');
+    if (!a) { avisos.push(`fila ${o._fila}: almacén “${o.almacen}” no reconocido (usa Oficina o CC ADM)`); return; }
+    if (alm && a !== alm) { avisos.push(`fila ${o._fila}: ${o.nombre} es de ${a}, no de esta sección`); return; }
+    const clave = a + '|' + norm(o.nombre);
+    if (vistos.has(clave)) { avisos.push(`fila ${o._fila}: ${o.nombre} está repetido`); return; }
+    vistos.add(clave);
+    const prev = db.items.find(i => i.almacen === a && norm(i.nombre) === norm(o.nombre));
+    const it = {id: prev ? prev.id : sig(), almacen:a, nombre:o.nombre, categoria:o.categoria || 'General', tipo:o.tipo || '', unidad:o.unidad || 'unid.', minimo: num(o.minimo) || 0};
+    lista.push(it);
+    if (String(o._stock ?? '').trim() !== '' && num(o._stock) >= 0) stocks[it.id] = num(o._stock);
+  });
+  return {lista, avisos, stocks};
+}
+function parseMovs(objs, items, alm){
+  const lista = [], avisos = [];
+  objs.forEach(o => {
+    if (!hayDatos(o)) return;
+    const a = almacenDe(o.almacen, alm);
+    if (alm && a && a !== alm) { avisos.push(`fila ${o._fila}: es de ${a}, no de esta sección`); return; }
+    const cand = items.filter(i => norm(i.nombre) === norm(o.articulo) && (!a || i.almacen === a));
+    if (cand.length !== 1) { avisos.push(`fila ${o._fila}: “${o.articulo}” ${cand.length ? 'existe en los dos almacenes; indica el almacén' : 'no está en la hoja Articulos'}`); return; }
+    const f = fechaAISO(o.fecha);
+    if (!f) { avisos.push(`fila ${o._fila}: fecha “${o.fecha}” no válida (usa dd/mm/aaaa)`); return; }
+    const t = norm(o.tipo);
+    const tipo = /^(compra|entrada|ingreso)/.test(t) ? 'Compra' : /^(salida|consumo|entrega)/.test(t) ? 'Salida' : /(conteo|ajuste|inventario)/.test(t) ? 'Ajuste' : null;
+    if (!tipo) { avisos.push(`fila ${o._fila}: movimiento “${o.tipo}” no válido (Compra, Salida o Conteo fisico)`); return; }
+    const c = num(o.cantidad);
+    if (!(c >= 0)) { avisos.push(`fila ${o._fila}: cantidad “${o.cantidad}” no válida`); return; }
+    lista.push({id:sig(), n:db.seq, itemId:cand[0].id, tipo, cantidad:c, fecha:f, costo:o.costo && !isNaN(num(o.costo)) ? String(num(o.costo)) : '', por:o.por || '', obs:o.obs || ''});
+  });
+  return {lista, avisos};
+}
+function validarStock(items, movs){
+  const st = {}, out = [];
+  [...movs].sort((a,b) => a.fecha.localeCompare(b.fecha) || a.n - b.n).forEach(m => {
+    const prev = st[m.itemId] || 0;
+    st[m.itemId] = m.tipo === 'Compra' ? prev + m.cantidad : m.tipo === 'Salida' ? prev - m.cantidad : m.cantidad;
+    if (st[m.itemId] < 0) { out.push(`${items.find(i => i.id === m.itemId)?.nombre || '?'} el ${isoAFecha(m.fecha)}: quedaría en ${st[m.itemId]}`); st[m.itemId] = 0; }
+  });
+  return out;
+}
+function parseTickets(objs, items){
+  const lista = [], avisos = [], ids = new Set();
+  objs.forEach(o => {
+    if (!hayDatos(o)) return;
+    if (!o.solicitante) { avisos.push(`fila ${o._fila}: falta el solicitante`); return; }
+    const alm = almacenDe(o.almacen, 'CC ADM') || 'CC ADM';
+    const lineas = String(o.articulos || '').split(/[;\n]/).map(x => x.trim()).filter(Boolean).map(x => {
+      const m = x.match(/^(.*?)\s*[x×*]\s*([\d.,]+)\s*$/i);
+      const nombre = (m ? m[1] : x).trim(), cantidad = m ? num(m[2]) : 1;
+      const it = items.find(i => i.almacen === alm && norm(i.nombre) === norm(nombre)) || items.find(i => norm(i.nombre) === norm(nombre));
+      return it ? {itemId:it.id, nombre:'', cantidad} : {itemId:'', nombre, cantidad};
+    });
+    if (!lineas.length) { avisos.push(`fila ${o._fila}: no tiene artículos (formato: Café x2; Azúcar x1)`); return; }
+    const estado = ESTADOS_TK.find(e => norm(e) === norm(o.estado)) || 'Pendiente';
+    const fecha = fechaAISO(o.fecha) || hoyISO();
+    const id = o.id && !ids.has(o.id) ? o.id : '';
+    if (id) ids.add(id);
+    lista.push({id, n:db.seq++, fecha, solicitante:o.solicitante, solicitanteEmail:(o.solicitanteEmail || '').toLowerCase(), area:o.area || '', almacen:alm,
+      prioridad: PRIORIDADES.find(p => norm(p) === norm(o.prioridad)) || 'Media', requeridoPara: fechaAISO(o.requeridoPara) || '', motivo:o.motivo || '', lineas,
+      estado, responsable:o.responsable || '', atendidoEl: estado === 'Atendida' ? (fechaAISO(o.atendidoEl) || fecha) : '', movs:[],
+      correo:{estado: norm(o.correo).startsWith('enviado') ? 'enviado' : 'por enviar', fecha:'(según Excel cargado)'},
+      timeline:[{fecha:new Date().toLocaleString('es-PE'), estado, por:usuario?.nombre || '', nota:'Cargado desde Excel'}]});
+  });
+  let k = 0;
+  lista.forEach(t => { if (!t.id) { do { t.id = `TK-IMP-${String(++k).padStart(4,'0')}`; } while (ids.has(t.id)); ids.add(t.id); } });
+  return {lista, avisos};
+}
+function parseEspacios(objs){
+  const lista = [], avisos = [], vistos = new Set();
+  objs.forEach(o => {
+    if (!o.codigo) { if (hayDatos(o)) avisos.push(`fila ${o._fila}: falta el código`); return; }
+    if (vistos.has(norm(o.codigo))) { avisos.push(`fila ${o._fila}: el código ${o.codigo} está repetido`); return; }
+    vistos.add(norm(o.codigo));
+    const prev = db.espacios.find(e => norm(e.codigo) === norm(o.codigo));
+    lista.push({id: prev ? prev.id : sig(), codigo:o.codigo.toUpperCase(), ubicacion:o.ubicacion || '', tipo:o.tipo || 'Auto',
+      cupos: Math.max(1, Math.round(num(o.cupos) || 1)), titulares: textoATitulares(o.titulares),
+      activo: !/^(no|n|0|false|falso|inactivo|fuera.*)$/i.test(norm(o.activo)), obs:o.obs || ''});
+  });
+  return {lista, avisos};
+}
+function parseReservas(objs, espacios){
+  const lista = [], avisos = [];
+  objs.forEach(o => {
+    if (!hayDatos(o)) return;
+    const e = espacios.find(x => norm(x.codigo) === norm(o.espacio));
+    if (!e) { avisos.push(`fila ${o._fila}: la cochera “${o.espacio}” no existe`); return; }
+    const f = fechaAISO(o.fecha);
+    if (!f) { avisos.push(`fila ${o._fila}: fecha “${o.fecha}” no válida`); return; }
+    const t = norm(o.turno), turno = /complet|dia|todo/.test(t) || !t ? 'Día completo' : /man/.test(t) ? 'Mañana' : /tard/.test(t) ? 'Tarde' : null;
+    if (!turno) { avisos.push(`fila ${o._fila}: turno “${o.turno}” no válido (Día completo, Mañana o Tarde)`); return; }
+    if (!o.nombre) { avisos.push(`fila ${o._fila}: falta el nombre`); return; }
+    const estado = ['Activa','Cancelada','Liberada'].find(x => norm(x) === norm(o.estado)) || 'Activa';
+    if (estado === 'Activa' && lista.some(r => r.estado === 'Activa' && r.espacioId === e.id && r.fecha === f && cubre(r.turno).some(x => cubre(turno).includes(x)))) {
+      avisos.push(`fila ${o._fila}: ${e.codigo} ya está reservado ese día y turno`); return; }
+    lista.push({id:sig(), espacioId:e.id, fecha:f, turno, nombre:o.nombre, email:(o.email || '').toLowerCase(), placa:(o.placa || '').toUpperCase(),
+      obs:o.obs || '', estado, creada:'(cargada desde Excel)', creadaPor:''});
+  });
+  return {lista, avisos};
+}
+function parseAusencias(objs, espacios){
+  const lista = [], avisos = [];
+  objs.forEach(o => {
+    if (!hayDatos(o)) return;
+    const e = espacios.find(x => norm(x.codigo) === norm(o.espacio));
+    if (!e) { avisos.push(`fila ${o._fila}: la cochera “${o.espacio}” no existe`); return; }
+    const t = titularesDe(e).find(x => norm(x.nombre) === norm(o.titular)) || titularesDe(e).find(x => nombreCoincide(o.titular, x.nombre) || nombreCoincide(x.nombre, o.titular));
+    if (!t) { avisos.push(`fila ${o._fila}: “${o.titular}” no es titular de la cochera ${e.codigo}`); return; }
+    const desde = fechaAISO(o.desde), hasta = fechaAISO(o.hasta) || desde;
+    if (!desde || !hasta || hasta < desde) { avisos.push(`fila ${o._fila}: fechas no válidas`); return; }
+    lista.push({id:sig(), espacioId:e.id, titular:t.nombre, email:t.email || '', desde, hasta, motivo:o.motivo || 'No vendrá', obs:o.obs || '',
+      estado: norm(o.estado).startsWith('cancel') ? 'Cancelada' : 'Activa', creada:'(cargada desde Excel)', creadaPor:''});
+  });
+  return {lista, avisos};
+}
+function parseHistorial(objs){
+  return {avisos:[], lista: objs.filter(hayDatos).map(o => ({fecha:o.fecha || '', base:o.base || '', ref:o.ref || '', nombre:o.nombre || '', accion:o.accion || '',
+    estado:o.estado ? estadoValido(o.estado) : '', condicion:condValida(o.condicion), asignado:o.asignado || '', por:o.por || '', obs:o.obs || ''}))};
+}
+
+/* ---------- Preparar la carga (no cambia nada hasta confirmar) ---------- */
+function planCarga(p, libro){
+  const alcance = PANELES[p].hojas, unica = alcance.length === 1;
+  const alm = p === 'economato' ? ui.almacen : null;
+  // Secciones de 2 hojas: si el archivo trae una sola hoja (o un CSV), se reconoce por sus encabezados
+  const DETECTA = {economato: h => h.includes('articulo') ? 'Movimientos' : 'Articulos', cochera: h => h.includes('desde') ? 'Ausencias' : h.includes('cochera') ? 'Reservas' : 'Cocheras'};
+  if (DETECTA[p] && !libro._csv && !alcance.some(h => hoja(libro, h)) && Object.keys(libro).length === 1) libro = {_csv: Object.values(libro)[0]};
+  if (libro._csv) {
+    if (p === 'todo') throw new Error('La copia completa se carga como Excel (.xlsx), con todas sus hojas.');
+    if (DETECTA[p]) libro = {[DETECTA[p]((libro._csv.find(r => r.some(c => String(c).trim())) || []).map(norm))]: libro._csv};
+  }
+  const get = h => alcance.includes(h) ? hoja(libro, h, unica) : null;
+  const resumen = [], avisos = [], pasos = [];
+  const anotar = (h, r) => avisos.push(...r.avisos.map(a => `${h} · ${a}`));
+
+  const sEq = get('Equipos');
+  if (sEq) { const r = parseEquipos(aObjetos(sEq, 'Equipos')); anotar('Equipos', r);
+    resumen.push(`• Equipos: ${db.equipos.length} actuales → ${r.lista.length} del archivo`); pasos.push(() => db.equipos = r.lista); }
+  const sSi = get('Sillas');
+  if (sSi) { const r = parseSillas(aObjetos(sSi, 'Sillas')); anotar('Sillas', r);
+    resumen.push(`• Sillas: ${db.sillas.length} actuales → ${r.lista.length} del archivo`); pasos.push(() => db.sillas = r.lista); }
+
+  let itemsFinal = db.items;
+  const sAr = get('Articulos'), sMv = get('Movimientos');
+  if (sAr || sMv) {
+    const enAlcance = i => !alm || i.almacen === alm;
+    const itemsFuera = db.items.filter(i => !enAlcance(i));
+    const movsFuera = db.movs.filter(m => { const i = itemDe(m.itemId); return i && !enAlcance(i); });
+    let nuevos = db.items.filter(enAlcance), stocks = {};
+    if (sAr) { const r = parseItems(aObjetos(sAr, 'Articulos'), alm); anotar('Articulos', r); nuevos = r.lista; stocks = r.stocks; }
+    itemsFinal = [...itemsFuera, ...nuevos];
+    let movs, origen;
+    if (sMv) { const r = parseMovs(aObjetos(sMv, 'Movimientos'), nuevos, alm); anotar('Movimientos', r); movs = r.lista; origen = 'del archivo'; }
+    else if (Object.keys(stocks).length) {
+      movs = Object.entries(stocks).map(([id, c]) => ({id:sig(), n:db.seq, itemId:id, tipo:'Ajuste', cantidad:c, fecha:hoyISO(), costo:'', por:usuario?.nombre || '', obs:'Stock cargado desde Excel'}));
+      origen = 'como conteo de hoy (columna Stock actual)';
+    } else { const ids = new Set(nuevos.map(i => i.id)); movs = db.movs.filter(m => ids.has(m.itemId)); origen = 'se conservan'; }
+    const neg = validarStock(itemsFinal, [...movsFuera, ...movs]);
+    if (neg.length) throw new Error('No se cargó nada: con estos movimientos el stock queda en negativo.\n\n' + neg.slice(0, 8).join('\n') + '\n\nRevisa las cantidades o agrega la compra que falta.');
+    const donde = alm ? (alm === 'CC ADM' ? 'CC ADM' : 'Inventario oficina') : 'oficina y CC ADM';
+    if (sAr) resumen.push(`• Artículos de ${donde}: ${db.items.filter(enAlcance).length} actuales → ${nuevos.length} del archivo`);
+    resumen.push(`• Movimientos de ${donde}: ${movsFuera.length === db.movs.length ? 0 : db.movs.length - movsFuera.length} actuales → ${movs.length} ${origen}`);
+    pasos.push(() => { db.items = itemsFinal; db.movs = [...movsFuera, ...movs]; });
+  }
+  const sTk = get('Solicitudes');
+  if (sTk) { const r = parseTickets(aObjetos(sTk, 'Solicitudes'), itemsFinal); anotar('Solicitudes', r);
+    resumen.push(`• Solicitudes: ${db.tickets.length} actuales → ${r.lista.length} del archivo`);
+    pasos.push(() => { db.tickets = r.lista; db.tkSeq = Math.max(db.tkSeq, ...r.lista.map(t => +(t.id.match(/(\d+)$/) || [0, 0])[1] + 1)); }); }
+  const sCo = get('Cocheras'), sRe = get('Reservas'), sAu = get('Ausencias');
+  if (sCo || sRe || sAu) {
+    let espacios = db.espacios;
+    if (sCo) { const r = parseEspacios(aObjetos(sCo, 'Cocheras')); anotar('Cocheras', r); espacios = r.lista;
+      resumen.push(`• Espacios de cochera: ${db.espacios.length} actuales → ${espacios.length} del archivo`); }
+    let reservas;
+    if (sRe) { const r = parseReservas(aObjetos(sRe, 'Reservas'), espacios); anotar('Reservas', r); reservas = r.lista;
+      resumen.push(`• Reservas: ${db.reservas.length} actuales → ${reservas.length} del archivo`); }
+    else { const ids = new Set(espacios.map(e => e.id)); reservas = db.reservas.filter(r => ids.has(r.espacioId)); }
+    let libs;
+    if (sAu) { const r = parseAusencias(aObjetos(sAu, 'Ausencias'), espacios); anotar('Ausencias', r); libs = r.lista;
+      resumen.push(`• Ausencias de titulares: ${db.liberaciones.length} actuales → ${libs.length} del archivo`); }
+    else { const ids = new Set(espacios.map(e => e.id)); libs = db.liberaciones.filter(l => ids.has(l.espacioId)); }
+    pasos.push(() => { db.espacios = espacios; db.reservas = reservas; db.liberaciones = libs; });
+  }
+  const sHi = get('Historial');
+  if (sHi) { const r = parseHistorial(aObjetos(sHi, 'Historial'));
+    resumen.push(`• Historial: ${db.historial.length} actuales → ${r.lista.length} del archivo`); pasos.push(() => db.historial = r.lista); }
+
+  if (!pasos.length) throw new Error(`El archivo no tiene ${unica ? 'la hoja' : 'ninguna de las hojas'} de esta sección: ${alcance.join(', ')}.\n\nDescarga el Excel de esta sección para ver el formato.`);
+  return {resumen, avisos, aplicar: () => pasos.forEach(f => f())};
+}
+async function cargarPanel(input, p){
+  const file = input.files[0]; input.value = '';
+  if (!soloAdmin()) return;
+  if (!file) return;
+  try {
+    const plan = planCarga(p, await leerLibro(file));
+    const omit = plan.avisos.length ? `\n\n⚠ ${plan.avisos.length} ${plan.avisos.length === 1 ? 'fila se omitirá' : 'filas se omitirán'}:\n${plan.avisos.slice(0, 8).join('\n')}${plan.avisos.length > 8 ? '\n…' : ''}` : '';
+    if (!confirm(`Se REEMPLAZARÁ lo actual por el contenido de “${file.name}”:\n\n${plan.resumen.join('\n')}${omit}\n\n¿Continuar?`)) return;
+    guardarRespaldo();
+    plan.aplicar();
+    persistir(); render();
+    toast('Carga completa · puedes deshacerla desde el Panel general');
+  } catch(e) { alert(e.message || String(e)); }
+}
+
+/* ---------- Respaldo para deshacer ---------- */
+function guardarRespaldo(){ try { localStorage.setItem('tta_respaldo', JSON.stringify({fecha:new Date().toLocaleString('es-PE'), db})); } catch(e){} }
+function respaldo(){ try { return JSON.parse(localStorage.getItem('tta_respaldo')); } catch(e){ return null; } }
+function deshacerCarga(){
+  if (!soloAdmin()) return;
+  const r = respaldo();
+  if (!r || !confirm(`¿Volver a cómo estaba todo antes de la carga del ${r.fecha}?`)) return;
+  db = r.db;
+  try { localStorage.removeItem('tta_respaldo'); } catch(e){}
+  persistir(); render(); toast('Se deshizo la última carga');
+}
+
+/* =========================================================
+   INICIO
+   ========================================================= */
+cargar();
+iniciarLogin();
+</script>
+</body>
+</html>
